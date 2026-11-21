@@ -1,0 +1,36 @@
+
+{
+  "version": "v1",
+  "pedidos": [
+    {
+      "id": 1,
+      "cliente": "Cliente A",
+      "estado": "pendiente"
+    },
+    {
+      "id": 2,
+      "cliente": "Cliente B",
+      "estado": "en_ruta"
+    },
+    {
+      "id": 3,
+      "cliente": "Cliente C",
+      "estado": "entregado"
+    },
+    {
+      "id": 4,
+      "cliente": "Cliente D",
+      "estado": "pendiente"
+    },
+    {
+      "id": 5,
+      "cliente": "Cliente E",
+      "estado": "en_ruta"
+    },
+    {
+      "id": 6,
+      "cliente": "Cliente F",
+      "estado": "entregado"
+    }
+  ]
+}
