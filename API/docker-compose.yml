@@ -1,0 +1,47 @@
+# Entorno local que imita el diseño AWS:
+#   - 2 instancias sin estado (ECS Fargate -> instancia-a, instancia-b)
+#   - 1 punto de entrada común con health checks (ALB -> nginx)
+#   - almacenamiento compartido de solo lectura (EFS -> volumen ./data)
+#
+# Punto de acceso: http://localhost:8080
+services:
+  instancia-a:
+    build:
+      context: .
+      args:
+        APP_VERSION: ${APP_VERSION:-v1}
+    environment:
+      INSTANCE_ID: instancia-a
+      DATA_FILE: /data/pedidos.json
+      APP_VERSION: ${APP_VERSION:-v1}
+      FAIL_HEALTH: ${FAIL_HEALTH:-false}
+    volumes:
+      - ./data:/data:ro          # almacenamiento compartido, solo lectura (QA-03, P3)
+    restart: unless-stopped
+
+  instancia-b:
+    build:
+      context: .
+      args:
+        APP_VERSION: ${APP_VERSION:-v1}
+    environment:
+      INSTANCE_ID: instancia-b
+      DATA_FILE: /data/pedidos.json
+      APP_VERSION: ${APP_VERSION:-v1}
+      FAIL_HEALTH: ${FAIL_HEALTH:-false}
+    volumes:
+      - ./data:/data:ro
+    restart: unless-stopped
+
+  # Punto de entrada común (equivalente local del ALB, QA-01).
+  # Reparte entre las 2 instancias y deja de enviar solicitudes a la que falla.
+  balanceador:
+    image: nginx:1.27-alpine
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - instancia-a
+      - instancia-b
+    restart: unless-stopped

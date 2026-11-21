@@ -1,0 +1,47 @@
+{
+  "version": "v1",
+  "pedidos": [
+    {
+      "id": "PED-001",
+      "cliente": "Ferretería El Tornillo",
+      "destino": "Carrera 12 #45-30, Bogotá",
+      "estado": "en_ruta",
+      "fecha": "2026-11-21"
+    },
+    {
+      "id": "PED-002",
+      "cliente": "Panadería La Espiga",
+      "destino": "Calle 80 #20-15, Medellín",
+      "estado": "entregado",
+      "fecha": "2026-11-20"
+    },
+    {
+      "id": "PED-003",
+      "cliente": "Distribuidora Andina",
+      "destino": "Av. Sexta #8-120, Cali",
+      "estado": "pendiente",
+      "fecha": "2026-11-21"
+    },
+    {
+      "id": "PED-004",
+      "cliente": "Café del Valle",
+      "destino": "Carrera 7 #33-10, Bucaramanga",
+      "estado": "en_ruta",
+      "fecha": "2026-11-21"
+    },
+    {
+      "id": "PED-005",
+      "cliente": "Supermercado Vía Norte",
+      "destino": "Calle 100 #50-40, Barranquilla",
+      "estado": "entregado",
+      "fecha": "2026-11-19"
+    },
+    {
+      "id": "PED-006",
+      "cliente": "Taller Mecánico Rueda Libre",
+      "destino": "Carrera 15 #70-25, Pereira",
+      "estado": "pendiente",
+      "fecha": "2026-11-21"
+    }
+  ]
+}
