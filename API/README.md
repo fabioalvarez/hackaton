@@ -75,7 +75,7 @@ pytest
 ## Estructura
 
 ```
-nodo-ruta-api/
+API/
 ├── app/
 │   ├── main.py          # API (endpoints, header de instancia, logging)
 │   └── config.py        # configuración desde variables de entorno
@@ -83,12 +83,18 @@ nodo-ruta-api/
 │   └── pedidos.json     # 6 pedidos + versión (almacenamiento compartido)
 ├── tests/
 │   └── test_api.py      # pruebas alineadas con PR-01 y PR-05
+├── ARQUITECTURA.md      # arquitectura de la API
+├── COMO_LEVANTAR.md     # guía para levantar la API
+├── README.md
 ├── Dockerfile
 ├── docker-compose.yml   # 2 instancias + balanceador nginx
 ├── nginx.conf
 ├── requirements.txt
 └── requirements-dev.txt
 ```
+
+> Esta carpeta `API/` es parte del repositorio del reto, junto a
+> `architecture-design/` (el diseño) y `recursos/` (material del reto).
 
 ## De local a AWS
 
