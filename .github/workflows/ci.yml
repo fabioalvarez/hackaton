@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  rollback-mock:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: recursos
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Desplegar versión sana
+        run: |
+          docker build -t nodo-ruta:v1 .
+          python scripts/mock_despliegue.py desplegar v1
+      - name: Desplegar versión defectuosa (debe hacer rollback)
+        run: |
+          docker build --build-arg SIMULAR_FALLA=1 -t nodo-ruta:v2-rota .
+          if python scripts/mock_despliegue.py desplegar v2-rota; then
+            echo "ERROR: la versión rota no hizo rollback"; exit 1
+          fi
+      - name: Verificar que sigue activa v1
+        run: |
+          python -c "import json; e=json.load(open('evidencias/mock_estado.json')); assert e['version']=='v1', e"
+          python scripts/mock_despliegue.py estado
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: evidencias-rollback-mock
+          path: recursos/evidencias/

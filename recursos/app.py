@@ -4,7 +4,24 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 DATA = Path(os.environ.get("DATA_PATH", "pedidos.json"))
-INSTANCE = os.environ.get("INSTANCE_ID", "instancia-ejemplo")
+
+
+def instance_id():
+    if os.environ.get("INSTANCE_ID"):
+        return os.environ["INSTANCE_ID"]
+    metadata = os.environ.get("ECS_CONTAINER_METADATA_URI_V4")
+    if metadata:
+        try:
+            import urllib.request
+            with urllib.request.urlopen(f"{metadata}/task", timeout=2) as r:
+                return "tarea-" + json.loads(r.read())["TaskARN"].rsplit("/", 1)[-1][:8]
+        except (OSError, ValueError, KeyError):
+            pass
+    return "instancia-ejemplo"
+
+
+INSTANCE = instance_id()
+FALLA = os.environ.get("SIMULAR_FALLA") == "1"
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -20,7 +37,10 @@ class Handler(BaseHTTPRequestHandler):
                 if route == "/pedidos":
                     response = {"instancia": INSTANCE, **data}
                 elif route == "/health":
-                    response = {"estado": "ok", "instancia": INSTANCE, "version_datos": data.get("version")}
+                    if FALLA:
+                        status, response = 500, {"estado": "falla_simulada", "instancia": INSTANCE}
+                    else:
+                        response = {"estado": "ok", "instancia": INSTANCE, "version_datos": data.get("version")}
                 else:
                     response = {"servicio": "Nodo Ruta - caso ficticio", "instancia": INSTANCE, "rutas": ["/health", "/pedidos"]}
             except (OSError, ValueError, TypeError, AttributeError):
