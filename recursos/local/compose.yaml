@@ -1,0 +1,57 @@
+# Equivalente local de la vista de despliegue de Nodo Ruta.
+# ALB -> proxy (NGINX) · ECS 2 tareas -> app1/app2 · EFS -> data/ (solo lectura)
+# S3 versionado -> respaldos/ · ECR -> imágenes nodo-ruta:<version> · CloudWatch -> docker logs
+name: nodo-ruta
+
+x-app: &app
+  image: nodo-ruta:${VERSION:-v1}
+  volumes:
+    - type: bind
+      source: ../data
+      target: /data
+      read_only: true
+      bind:
+        create_host_path: false
+  healthcheck:
+    test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2)"]
+    interval: 5s
+    timeout: 3s
+    retries: 2
+    start_period: 5s
+  restart: unless-stopped
+  cpus: 0.25
+  mem_limit: 512m
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  app1:
+    <<: *app
+    environment:
+      INSTANCE_ID: app1
+      DATA_PATH: /data/pedidos.json
+  app2:
+    <<: *app
+    environment:
+      INSTANCE_ID: app2
+      DATA_PATH: /data/pedidos.json
+  proxy:
+    image: nginx:1.28-alpine
+    ports:
+      - "127.0.0.1:8080:80"
+    volumes:
+      - type: bind
+        source: ./nginx.conf
+        target: /etc/nginx/nginx.conf
+        read_only: true
+        bind:
+          create_host_path: false
+    depends_on:
+      app1:
+        condition: service_healthy
+      app2:
+        condition: service_healthy
+    restart: unless-stopped

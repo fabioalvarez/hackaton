@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 jobs:
-  rollback-mock:
+  despliegue-local:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -24,22 +24,55 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Desplegar versión sana
+
+      - name: Preparar datos y levantar v1 (I01)
         run: |
-          docker build -t nodo-ruta:v1 .
-          python scripts/mock_despliegue.py desplegar v1
-      - name: Desplegar versión defectuosa (debe hacer rollback)
+          python scripts/datos.py preparar
+          python scripts/desplegar.py construir v1
+          python scripts/desplegar.py iniciar
+          python scripts/verificar_servicio.py --peticiones 20 --esperadas app1,app2 --salida evidencias/ci_inicio.json
+
+      - name: Detener app1 y seguir atendiendo (I02)
         run: |
-          docker build --build-arg SIMULAR_FALLA=1 -t nodo-ruta:v2-rota .
-          if python scripts/mock_despliegue.py desplegar v2-rota; then
-            echo "ERROR: la versión rota no hizo rollback"; exit 1
+          docker compose -f local/compose.yaml stop app1
+          sleep 2
+          python scripts/verificar_servicio.py --esperadas app2 --salida evidencias/ci_fallo_app1.json
+          docker compose -f local/compose.yaml start app1
+          docker compose -f local/compose.yaml up -d --wait
+
+      - name: Respaldar, alterar y restaurar datos (I05)
+        run: |
+          RESPALDO=$(python scripts/datos.py respaldar | sed 's/Respaldo creado: //')
+          python scripts/datos.py simular-error
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/health)" = "503"
+          python scripts/datos.py restaurar --respaldo "$RESPALDO"
+          python scripts/verificar_servicio.py --esperadas app1,app2 --salida evidencias/ci_restaurado.json
+
+      - name: Versión defectuosa con rollback automático (PR-05)
+        run: |
+          python scripts/desplegar.py construir v2-rota --falla
+          if python scripts/desplegar.py desplegar v2-rota; then
+            echo "ERROR: la versión defectuosa no hizo rollback"; exit 1
           fi
-      - name: Verificar que sigue activa v1
+          grep -q "VERSION=v1" local/.env
+          python scripts/verificar_servicio.py --esperadas app1,app2 --salida evidencias/ci_post_rollback.json
+
+      - name: Versión sana nueva (QA-04)
         run: |
-          python -c "import json; e=json.load(open('evidencias/mock_estado.json')); assert e['version']=='v1', e"
-          python scripts/mock_despliegue.py estado
+          python scripts/desplegar.py construir v2
+          python scripts/desplegar.py desplegar v2
+          python scripts/verificar_servicio.py --esperadas app1,app2 --salida evidencias/ci_v2.json
+
+      - name: Logs
+        if: always()
+        run: docker compose -f local/compose.yaml logs --tail 100 > evidencias/ci_logs.txt || true
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: evidencias-rollback-mock
+          name: evidencias-ci
           path: recursos/evidencias/
+
+      - name: Limpieza
+        if: always()
+        run: docker compose -f local/compose.yaml down
