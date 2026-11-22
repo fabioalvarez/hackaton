@@ -1,15 +1,12 @@
-"""Backup watcher (QA-02): runs one check of watch.sh against temporary folders."""
+"""Backup watcher (QA-02): runs one check of the watcher against temporary folders."""
 
 import json
-import shutil
-import subprocess
 from pathlib import Path
 
 import pytest
 
-SCRIPT = Path(__file__).parent.parent / "watch.sh"
-
-pytestmark = pytest.mark.skipif(shutil.which("jq") is None, reason="jq is not installed")
+from settings import Settings
+from watcher import Watcher
 
 DATA = {
     "data_version": "data-v1",
@@ -33,17 +30,15 @@ def backup_dir(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def check(data_file, backup_dir):
+def check(data_file, backup_dir, capsys):
     """Runs one check of the watcher and returns the events it logged."""
+    watcher = Watcher(Settings(data_file, backup_dir))
 
     def _check() -> list[dict]:
-        result = subprocess.run(
-            ["sh", str(SCRIPT)],
-            env={"PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin",
-                 "DATA_FILE": str(data_file), "BACKUP_DIR": str(backup_dir), "ONCE": "1"},
-            capture_output=True, text=True, timeout=10,
-        )
-        return [json.loads(line) for line in result.stdout.splitlines()]
+        capsys.readouterr()
+        watcher.check()
+
+        return [json.loads(line) for line in capsys.readouterr().out.splitlines()]
 
     return _check
 

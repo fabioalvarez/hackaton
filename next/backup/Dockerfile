@@ -1,8 +1,9 @@
-# Backup watcher: a shell script with jq. It is the only service that writes to the data volume.
-FROM alpine:3.20
+# Backup watcher: plain Python files with no dependencies. It is the only service that writes to the data volume.
+FROM python:3.12-slim
 
-RUN apk add --no-cache jq
+ENV PYTHONUNBUFFERED=1
 
-COPY watch.sh /usr/local/bin/watch.sh
+WORKDIR /app
+COPY src .
 
-CMD ["sh", "/usr/local/bin/watch.sh"]
+CMD ["python", "main.py"]

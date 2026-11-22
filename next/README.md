@@ -96,7 +96,13 @@ next/
 │   └── tests/
 ├── backup/                # vigilante de respaldo
 │   ├── Dockerfile
-│   ├── watch.sh
+│   ├── src/
+│   │   ├── main.py          # bucle: revisa los datos cada 5 s
+│   │   ├── watcher.py       # decide cuándo respaldar y cuándo restaurar
+│   │   ├── validation.py    # validación del archivo de datos
+│   │   ├── utils.py         # funciones auxiliares (hash, lectura, reemplazo atómico)
+│   │   ├── logs.py          # una línea JSON por evento
+│   │   └── settings.py      # variables de entorno
 │   └── tests/
 ├── haproxy/haproxy.cfg    # balanceador
 └── store/                 # todos los datos
