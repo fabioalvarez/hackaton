@@ -29,8 +29,10 @@ def test_ct01_dotenv_is_outside_the_docker_build_context():
     assert not (API_DIR / ".env").exists()
 
 
-def test_ct01_data_is_not_baked_into_the_image():
-    assert "data" in (API_DIR / ".dockerignore").read_text().split()
+def test_ct01_data_is_outside_the_docker_build_context():
+    found = [p for p in API_DIR.rglob("orders*.json") if ".venv" not in p.parts]
+
+    assert found == []
 
 
 # --- CT-02 · Minimal exposure ---------------------------------------------------

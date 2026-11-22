@@ -3,12 +3,12 @@
 
 PORT    := 8000
 API     := api
-FILE    ?= $(API)/data/orders.json
+FILE    ?= store/data/orders.json
 VOLUME  := next_orders-data
 COMPOSE := docker compose
 
 .DEFAULT_GOAL := help
-.PHONY: help env up-local up down logs load-data test check-docker
+.PHONY: help env up-local up down logs load-data corrupt test check-docker
 
 help: ## Show the available commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-10s %s\n", $$1, $$2}'
@@ -43,7 +43,10 @@ logs: ## Follow the logs of all services
 
 load-data: ## Load a data file into the volume (default: api/data/orders.json)
 	docker run --rm -v $(VOLUME):/data -v "$(abspath $(FILE)):/src/orders.json:ro" alpine \
-		cp /src/orders.json /data/orders.json
+		sh -c 'cp /src/orders.json /data/.orders.tmp && mv /data/.orders.tmp /data/orders.json'
+
+corrupt: ## Alter the data in the volume without changing its version (to test the backup)
+	docker run --rm -v $(VOLUME):/data alpine sed -i 's/ORD-001/ORD-999/' /data/orders.json
 
 check-docker:
 	@docker info >/dev/null 2>&1 || { \
@@ -55,4 +58,4 @@ check-docker:
 # ---------- Tests ----------
 
 test: env ## Run the tests
-	uv run --directory $(API) pytest
+	uv run --directory $(API) pytest tests $(CURDIR)/backup/tests

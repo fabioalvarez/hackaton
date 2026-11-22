@@ -1,12 +1,11 @@
-# Local environment: HAProxy in front of two instances of the API sharing a read-only data volume.
+# Local environment: HAProxy in front of two instances of the API sharing a read-only data volume,
+# plus a backup watcher that is the only one allowed to write to that volume.
 # Use it through `make up` / `make down`.
 
 name: next
 
 x-api: &api
-  build:
-    context: ./api
-    dockerfile: ../Dockerfile
+  build: ./api
   image: next-api:${TAG:-dev}
   restart: unless-stopped
   env_file: .env
@@ -51,6 +50,16 @@ services:
         condition: service_healthy
       api-2:
         condition: service_healthy
+
+  backup:
+    build: ./backup
+    image: next-backup:${TAG:-dev}
+    restart: unless-stopped
+    environment:
+      INTERVAL: "5"
+    volumes:
+      - orders-data:/data      # the only service with write access
+      - ./store/backups:/backups
 
 volumes:
   orders-data:
