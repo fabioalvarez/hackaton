@@ -1,4 +1,4 @@
-"""Backs up the data when it is new, and brings it back when it is lost or altered.
+"""Backs up the data when it is new or has changed, and brings it back when it is lost.
 
 Backups live in `backup_dir`:
     orders-<version>.json    copy of the data of that version
@@ -24,6 +24,8 @@ class Watcher:
     def check(self) -> None:
         """Looks at the data once and does what is needed."""
         self.backup_dir.mkdir(parents=True, exist_ok=True)
+        log("starting backup process", level="debug")
+
         version = get_data_version(self.data_file)
 
         if version is None:
@@ -31,10 +33,15 @@ class Watcher:
             return
 
         if not self.has_backup(version):
+            log(f"new data version {version}, starting backup")
             self.back_up(version)
-            
-        elif self.is_altered(version):
-            self.restore(version, "content changed without changing the version")
+
+        elif self.differs_from_backup(version):
+            log(f"data is different from the backup of {version}, starting backup")
+            self.back_up(version)
+
+        else:
+            log(f"data file is the same as the backup of {version}, no backup is required", level="debug")
 
         self.remember_as_latest(version)
 
@@ -45,34 +52,36 @@ class Watcher:
         version = self.latest_version()
 
         if version and self.has_backup(version):
-            self.restore(version, "data file missing or invalid")
+            log(f"data file is missing or invalid, starting restore of {version}")
+            self.restore(version)
         else:
-            log("error", detail="data file missing or invalid, and there is no backup to restore")
+            log("data file is missing or invalid and there is no backup to restore", level="error")
 
     def back_up(self, version: str) -> None:
         shutil.copyfile(self.data_file, self.copy_path(version))
+        
         self.hash_path(version).write_text(sha256(self.copy_path(version)))
 
-        log("backup", version, "new version backed up")
+        log("backup done")
 
-    def restore(self, version: str, reason: str) -> None:
+    def restore(self, version: str) -> None:
         start = time.monotonic()
 
         try:
             replace_file(self.copy_path(version), self.data_file)
         except OSError as error:
-            log("restore_failed", version, f"{reason}: {error}")
+            log(f"restore failed: {error}", level="error")
             return
 
-        log("restore_ok", version, f"{reason} (took {time.monotonic() - start:.1f}s)")
+        log(f"restore done in {time.monotonic() - start:.1f}s")
 
     # --- Questions -------------------------------------------------------------
 
     def has_backup(self, version: str) -> bool:
         return self.copy_path(version).exists()
 
-    def is_altered(self, version: str) -> bool:
-        """True if the data differs from the backup of the same version."""
+    def differs_from_backup(self, version: str) -> bool:
+        """True if the data is not the same as the backup of its version."""
         backup_hash = read_text(self.hash_path(version)) or sha256(self.copy_path(version))
 
         return sha256(self.data_file) != backup_hash

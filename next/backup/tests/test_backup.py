@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+import logs
 from settings import Settings
 from watcher import Watcher
 
@@ -43,10 +44,14 @@ def check(data_file, backup_dir, capsys):
     return _check
 
 
+def restored(events: list[dict]) -> bool:
+    return any(e["detail"].startswith("restore done") for e in events)
+
+
 def test_new_version_is_backed_up_with_its_version_in_the_name(check, backup_dir, data_file):
     events = check()
 
-    assert [e["event"] for e in events] == ["backup"]
+    assert [e["detail"] for e in events] == ["new data version data-v1, starting backup", "backup done"]
     assert (backup_dir / "orders-data-v1.json").read_text() == data_file.read_text()
     assert (backup_dir / "latest").read_text().strip() == "data-v1"
 
@@ -72,7 +77,7 @@ def test_missing_file_is_restored(check, data_file):
     original = data_file.read_text()
     data_file.unlink()
 
-    assert [e["event"] for e in check()] == ["restore_ok"]
+    assert restored(check())
     assert data_file.read_text() == original
 
 
@@ -82,18 +87,33 @@ def test_invalid_file_is_restored(check, data_file, content):
     original = data_file.read_text()
     data_file.write_text(content)
 
-    assert [e["event"] for e in check()] == ["restore_ok"]
+    assert restored(check())
     assert data_file.read_text() == original
 
 
-def test_content_changed_without_changing_the_version_is_restored(check, data_file):
+def test_changed_data_is_backed_up_again_and_not_restored(check, backup_dir, data_file):
     check()
-    original = data_file.read_text()
-    altered = {**DATA, "orders": [{"id": "ORD-999", "zone": "North", "status": "pending"}]}
-    data_file.write_text(json.dumps(altered))
+    changed = json.dumps({**DATA, "orders": [{"id": "ORD-999", "zone": "North", "status": "pending"}]})
+    data_file.write_text(changed)
+    events = check()
 
-    assert [e["event"] for e in check()] == ["restore_ok"]
-    assert data_file.read_text() == original
+    assert [e["detail"] for e in events] == [
+        "data is different from the backup of data-v1, starting backup",
+        "backup done",
+    ]
+    assert (backup_dir / "orders-data-v1.json").read_text() == changed
+    assert data_file.read_text() == changed
+
+
+def test_the_latest_content_is_what_gets_restored(check, data_file):
+    check()
+    changed = json.dumps({**DATA, "orders": []})
+    data_file.write_text(changed)
+    check()
+    data_file.unlink()
+
+    assert restored(check())
+    assert data_file.read_text() == changed
 
 
 def test_restores_the_latest_version_after_a_new_one_was_backed_up(check, data_file):
@@ -110,12 +130,32 @@ def test_restores_the_latest_version_after_a_new_one_was_backed_up(check, data_f
 def test_without_a_backup_nothing_is_invented(check, data_file):
     data_file.unlink()
 
-    assert [e["event"] for e in check()] == ["error"]
+    assert [e["level"] for e in check()] == ["error"]
     assert not data_file.exists()
 
 
 def test_unsafe_version_is_not_accepted(check, backup_dir, data_file):
     data_file.write_text(json.dumps({**DATA, "data_version": "../../evil"}))
 
-    assert [e["event"] for e in check()] == ["error"]
+    assert [e["level"] for e in check()] == ["error"]
     assert not list(backup_dir.glob("orders-*"))
+
+
+def test_debug_level_shows_what_each_check_validated(check):
+    logs.configure("debug")
+    try:
+        check()
+        events = check()
+    finally:
+        logs.configure("info")
+
+    assert [e["detail"] for e in events] == [
+        "starting backup process",
+        "data file is the same as the backup of data-v1, no backup is required",
+    ]
+
+
+def test_info_level_stays_quiet_when_nothing_happens(check):
+    check()
+
+    assert check() == []

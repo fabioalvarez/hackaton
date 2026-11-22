@@ -4,12 +4,14 @@ import signal
 import sys
 import time
 
+from logs import configure
 from settings import Settings
 from watcher import Watcher
 
 
 def main() -> None:
     settings = Settings.from_env()
+    configure(settings.log_level)
     watcher = Watcher(settings)
 
     # As PID 1 in a container, Python ignores SIGTERM unless told otherwise.

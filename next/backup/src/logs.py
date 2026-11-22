@@ -1,17 +1,18 @@
-"""One JSON line per event, so the logs can be filtered with jq."""
+"""One JSON line per log, with only its level and what is happening."""
 
 import json
-from datetime import datetime, timezone
+
+LEVELS = {"debug": 10, "info": 20, "error": 40}
+
+# Logs below this level are not printed. Set once at startup with `configure`.
+min_level = LEVELS["info"]
 
 
-def log(event: str, version: str = "", detail: str = "") -> None:
-    """Prints the event as a JSON line."""
+def configure(level: str) -> None:
+    global min_level
+    min_level = LEVELS[level.lower()]
 
-    line = {
-        "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "event": event,
-        "version": version,
-        "detail": detail,
-    }
-    
-    print(json.dumps(line), flush=True)
+
+def log(detail: str, level: str = "info") -> None:
+    if LEVELS[level] >= min_level:
+        print(json.dumps({"level": level, "detail": detail}), flush=True)

@@ -6,12 +6,13 @@ API     := api
 FILE    ?= store/data/orders.json
 VOLUME  := next_orders-data
 COMPOSE := docker compose
+INSTANCE ?= api-1
 
 .DEFAULT_GOAL := help
-.PHONY: help env up-local up down logs load-data corrupt test check-docker
+.PHONY: help env up-local up down logs load-data corrupt delete-data kill-instance test check-docker
 
 help: ## Show the available commands
-	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-10s %s\n", $$1, $$2}'
+	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-14s %s\n", $$1, $$2}'
 
 # ---------- Environment ----------
 
@@ -41,12 +42,10 @@ down: ## Remove containers, network and data volume
 logs: ## Follow the logs of all services
 	$(COMPOSE) logs -f -t
 
-load-data: ## Load a data file into the volume (default: api/data/orders.json)
+load-data: ## Load a data file into the volume (default: store/data/orders.json)
+	@test -f "$(FILE)" || { echo "File not found: $(FILE)"; exit 1; }
 	docker run --rm -v $(VOLUME):/data -v "$(abspath $(FILE)):/src/orders.json:ro" alpine \
-		sh -c 'cp /src/orders.json /data/.orders.tmp && mv /data/.orders.tmp /data/orders.json'
-
-corrupt: ## Alter the data in the volume without changing its version (to test the backup)
-	docker run --rm -v $(VOLUME):/data alpine sed -i 's/ORD-001/ORD-999/' /data/orders.json
+		sh -c 'cp /src/orders.json /data/.orders.tmp && chmod 644 /data/.orders.tmp && mv /data/.orders.tmp /data/orders.json'
 
 check-docker:
 	@docker info >/dev/null 2>&1 || { \
@@ -59,3 +58,19 @@ check-docker:
 
 test: env ## Run the tests
 	uv run --directory $(API) pytest tests $(CURDIR)/backup/tests
+
+
+# ---------- Validation (manual checks against the running environment) ----------
+
+corrupt: ## Corrupt the data file in the volume (to test that the backup restores it)
+	docker run --rm -v $(VOLUME):/data alpine sh -c 'echo corrupted > /data/orders.json'
+
+delete-data: ## Delete the data file in the volume (to test that the backup restores it)
+	docker run --rm -v $(VOLUME):/data alpine rm /data/orders.json
+
+kill-instance: ## Kill one API instance (INSTANCE=api-1) and check that the service keeps responding
+	$(COMPOSE) kill $(INSTANCE)
+	@echo "20 requests through HAProxy while $(INSTANCE) is down (count, status, instance):"
+	@for i in $$(seq 20); do \
+		curl -s -o /dev/null -w "%{http_code} %header{x-instance-id}\n" localhost:$(PORT)/orders; \
+	done | sort | uniq -c

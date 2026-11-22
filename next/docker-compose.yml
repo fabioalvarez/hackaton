@@ -57,6 +57,7 @@ services:
     restart: unless-stopped
     environment:
       INTERVAL: "5"
+      LOG_LEVEL: debug       # shows what every check validates; use info to see only backups and restores
     volumes:
       - orders-data:/data      # the only service with write access
       - ./store/backups:/backups

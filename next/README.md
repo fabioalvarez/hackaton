@@ -20,7 +20,9 @@ Todos se ejecutan dentro de `next/`. `make help` muestra la lista.
 | `make down` | Elimina contenedores, red y volumen de datos |
 | `make logs` | Sigue los logs de HAProxy y de las 2 instancias |
 | `make load-data FILE=ruta` | Reemplaza el archivo de datos del volumen por el indicado |
-| `make corrupt` | Altera los datos del volumen sin cambiar la versión, para probar el respaldo |
+| `make corrupt` | Deja inválido el archivo de datos del volumen, para probar que el respaldo lo restaura |
+| `make delete-data` | Borra el archivo de datos del volumen, para probar que el respaldo lo restaura |
+| `make kill-instance` | Mata una instancia (`INSTANCE=api-1`) y comprueba que el servicio sigue respondiendo |
 | `make test` | Ejecuta las pruebas de la API y del vigilante de respaldo |
 
 Con `make up`, la API solo se alcanza por HAProxy (puerto `8000`); las instancias no publican puerto. El header `X-Instance-Id` indica cuál respondió: `api-1` o `api-2`.
@@ -33,10 +35,10 @@ for i in $(seq 10); do curl -s -o /dev/null -D - localhost:8000/orders | grep -i
 
 Con `make up` corre un contenedor `backup` que revisa los datos cada 5 s, sin intervención:
 
-- **Respaldo:** cuando aparece una versión nueva y válida, la copia a `store/backups/orders-<versión>.json`.
-- **Restauración:** si el archivo falta, es inválido o su contenido cambió sin cambiar la versión, lo restaura desde `store/backups/`.
-- **Regla de versiones:** una `data_version` identifica un contenido único. Si cambias los datos, cambia también la versión; de lo contrario se interpreta como una alteración y se revierte.
-- **Probarlo:** `make corrupt` altera los datos; en unos segundos `make logs` muestra `restore_ok` y `/orders` vuelve a responder igual.
+- **Respaldo:** cuando los datos son válidos y nuevos (versión nueva) o distintos del respaldo de su versión, los copia a `store/backups/orders-<versión>.json`. Un cambio en datos válidos es una actualización, no una pérdida.
+- **Restauración:** solo si los datos se pierden: el archivo falta o es inválido. Se restaura la última versión respaldada desde `store/backups/`.
+- **Ver qué valida:** con `LOG_LEVEL: debug` (el valor actual en `docker-compose.yml`), cada revisión imprime qué hizo (`starting backup process`, `data file is the same as the backup of v1, no backup is required`). Con `info` solo se ven los respaldos y las restauraciones.
+- **Probarlo:** `make corrupt` o `make delete-data` hacen perder los datos; en unos segundos `make logs` muestra `restore_ok` y `/orders` vuelve a responder igual.
 
 `store/backups/` queda en tu máquina (ignorado por git) y `make down` no lo borra.
 
