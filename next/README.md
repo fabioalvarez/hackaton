@@ -16,7 +16,7 @@ Todos se ejecutan dentro de `next/`. `make help` muestra la lista.
 |---|---|
 | `make env` | Crea el entorno `api/.venv` (`uv sync`) y el archivo `.env` a partir de `.env.example` si no existe |
 | `make up-local` | Levanta **una** instancia de la API **sin Docker** en http://localhost:8080 |
-| `make up` | Levanta con Docker **HAProxy y 2 réplicas de la API** en http://localhost:8000. Si Docker está apagado, lo inicia y espera a que esté listo. Carga `store/data/orders.json` en el volumen si está vacío |
+| `make up` | Levanta con Docker **HAProxy y 2 réplicas de la API** en http://localhost:8000. Si Docker está apagado, lo inicia. Termina cuando HAProxy ya responde `/health`, no antes. Carga `store/data/orders.json` en el volumen si está vacío |
 | `make down` | Elimina contenedores, red y volumen de datos |
 | `make logs` | Sigue los logs de HAProxy y de las 2 instancias |
 | `make load-data FILE=ruta` | Reemplaza el archivo de datos del volumen por el indicado |
@@ -24,6 +24,7 @@ Todos se ejecutan dentro de `next/`. `make help` muestra la lista.
 | `make delete-data` | Borra el archivo de datos del volumen, para probar que el respaldo lo restaura |
 | `make deploy TAG=1.1.0` | Despliega una versión nueva: levanta 2 contenedores al lado de los actuales y apaga los actuales solo si los nuevos funcionan. Si fallan, los descarta y el servicio no se interrumpe |
 | `make kill-instance` | Mata un contenedor de la API y comprueba que el servicio sigue respondiendo |
+| `make verify` | Demuestra todos los requisitos y escenarios de calidad contra el entorno levantado, mostrando en vivo lo que pasa, y escribe `reports/verification.md`. `YES=1` no pregunta antes de las comprobaciones destructivas; `STEP=1` espera un Enter antes de cada escenario; `ONLY=QA-01,RF-02` ejecuta solo algunas |
 | `make deploy-broken` | Despliega una versión que no arranca y comprueba que se descarta sin afectar el servicio |
 | `make test` | Ejecuta las pruebas de la API y del vigilante de respaldo |
 
@@ -43,6 +44,26 @@ Con `make up` corre un contenedor `backup` que revisa los datos cada 5 s, sin in
 - **Probarlo:** `make corrupt` o `make delete-data` hacen perder los datos; en unos segundos `make logs` muestra `restore_ok` y `/orders` vuelve a responder igual.
 
 `store/backups/` queda en tu máquina (ignorado por git) y `make down` no lo borra.
+
+## Verificación de requisitos
+
+`make verify` demuestra que se cumplen los requisitos funcionales, los escenarios de calidad y los constraints, y lo hace **mostrando en vivo lo que pasa**. De cada escenario dice primero qué va a hacer y cuál es el criterio (≥ 99 % de éxito, ≤ 10 s, ≤ 5 min, etc.). Mientras corre muestra:
+
+- **Cada llamada a la API:** hora, ruta, código y qué instancia respondió.
+- **Lo que le pasa al entorno:** cuando se detiene o se crea un contenedor, cuando HAProxy saca o reincorpora una instancia, cuando el vigilante restaura los datos, y los pasos del despliegue.
+- **El veredicto de cada escenario**, con lo medido, y un resumen al final.
+
+```
+14:00:03  ⚡ detengo la instancia api-1 de golpe (docker kill)
+14:00:03  🔻 api-1 se detuvo
+14:00:04  🔻 HAProxy: una instancia ya no existe, deja de recibir solicitudes
+14:00:04  ✅ GET /orders  200  atendió api-2
+14:00:19  ✅ QA-01: 100.0% de 32 solicitudes; HAProxy la sacó en 0.6 s
+```
+
+Con `STEP=1` se detiene antes de cada escenario para que quien presenta lo explique. Además escribe `reports/verification.md` con la evidencia.
+
+Las comprobaciones de calidad **cambian el entorno**: matan y recrean contenedores, rompen los datos, despliegan versiones y lo bajan y levantan por completo. Al terminar el entorno queda levantado, pero el volumen de datos vuelve a los datos iniciales (`store/data/orders.json`): lo que hayas cargado con `make load-data` se pierde. Los respaldos de `store/backups/` no se borran. Por eso pregunta antes de empezar; `YES=1` omite la pregunta. Necesita el entorno levantado (`make up`).
 
 ## Endpoints
 
@@ -107,6 +128,16 @@ next/
 │   │   ├── utils.py         # funciones auxiliares (hash, lectura, reemplazo atómico)
 │   │   ├── logs.py          # una línea JSON por evento
 │   │   └── settings.py      # variables de entorno
+│   └── tests/
+├── verify/                # herramienta que demuestra los requisitos (Python)
+│   ├── src/
+│   │   ├── main.py            # elige las comprobaciones, las ejecuta y escribe el informe
+│   │   ├── checks_functional.py   # RF-01 a RF-05
+│   │   ├── checks_quality.py      # QA-01 a QA-07 (cambian el entorno)
+│   │   ├── checks_constraints.py  # CT-01, CT-02 y los tests automáticos
+│   │   ├── system.py          # docker, balanceador y archivos
+│   │   ├── result.py          # lo que reporta cada comprobación
+│   │   └── report.py          # tabla en la terminal e informe en Markdown
 │   └── tests/
 ├── deploy/                # script de despliegue (Python)
 │   ├── src/

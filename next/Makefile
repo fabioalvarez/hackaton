@@ -12,7 +12,7 @@ TAG     ?= $(shell tail -n 1 .deploy-history 2>/dev/null || echo dev)
 export TAG
 
 .DEFAULT_GOAL := help
-.PHONY: help env up-local up down logs load-data deploy corrupt delete-data kill-instance deploy-broken test check-docker
+.PHONY: help env up-local up down logs load-data deploy corrupt delete-data kill-instance deploy-broken verify test check-docker
 
 help: ## Show the available commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-14s %s\n", $$1, $$2}'
@@ -36,6 +36,10 @@ up: .env check-docker ## Run HAProxy + 2 API replicas with Docker, on http://loc
 	@$(MAKE) --no-print-directory load-data
 
 	$(COMPOSE) up -d --wait
+
+	@# HAProxy needs a few seconds to find the replicas: it is ready when it answers.
+	@for i in $$(seq 60); do curl -sf localhost:$(PORT)/health >/dev/null && break; sleep 1; done
+	@curl -sf localhost:$(PORT)/health >/dev/null || { echo "HAProxy does not answer on port $(PORT)"; exit 1; }
 
 	@echo "Ready: http://localhost:$(PORT)"
 
@@ -64,7 +68,7 @@ check-docker:
 # ---------- Tests ----------
 
 test: env ## Run the tests
-	uv run --directory $(API) pytest tests $(CURDIR)/backup/tests $(CURDIR)/deploy/tests
+	uv run --directory $(API) pytest tests $(CURDIR)/backup/tests $(CURDIR)/deploy/tests $(CURDIR)/verify/tests
 
 
 # ---------- Validation (manual checks against the running environment) ----------
@@ -86,3 +90,6 @@ deploy-broken: ## Deploy a version that cannot start and check that it is rolled
 	-$(MAKE) --no-print-directory deploy TAG=broken BREAK=1
 	@echo "20 requests after the rolled back deploy (count, status):"
 	@for i in $$(seq 20); do curl -s -o /dev/null -w "%{http_code}\n" localhost:$(PORT)/orders; done | sort | uniq -c
+
+verify: ## Check every requirement and quality scenario: make verify (YES=1 skips the question, STEP=1 waits for Enter before each scenario, ONLY=QA-01,RF-02 picks some)
+	python3 verify/src/main.py $(if $(YES),--yes) $(if $(STEP),--step) $(if $(ONLY),--only $(ONLY))
