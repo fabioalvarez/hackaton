@@ -1,12 +1,12 @@
-"""Endpoints of the API and the responses for its errors."""
+"""Endpoints of the API."""
 
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, FastAPI, Request
-from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
 
-from next.data import DataError, OrderRepository, OrdersData
+from next.data import OrderRepository, OrdersData
+from next.errors import DataError, data_error_handler, http_error_handler
 from next.settings import Settings
 from next.utils import list_route_paths
 
@@ -44,16 +44,6 @@ def orders(request: Request, repository: Repository) -> OrdersData:
     request.state.data_version = data.data_version
     
     return data
-
-
-def data_error_handler(request: Request, error: DataError) -> JSONResponse:
-    return JSONResponse({"status": "data_error"}, status_code=503)
-
-
-def http_error_handler(request: Request, error: HTTPException) -> JSONResponse:
-    messages = {404: "Route not found", 405: "Method not allowed"}
-    message = messages.get(error.status_code, str(error.detail))
-    return JSONResponse({"error": message}, status_code=error.status_code)
 
 
 def register_routes(app: FastAPI) -> None:

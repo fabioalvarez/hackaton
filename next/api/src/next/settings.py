@@ -1,4 +1,4 @@
-"""Configuration, read only from environment variables (no secrets)."""
+"""Configuration from environment variables (no secrets). `make` loads them from .env."""
 
 import socket
 from pathlib import Path
@@ -8,7 +8,7 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    """Environment variables: DATA_PATH, INSTANCE_ID, SERVICE_NAME, PORT, LOG_LEVEL."""
+    """Variables: DATA_PATH, INSTANCE_ID, SERVICE_NAME, PORT, LOG_LEVEL."""
 
     data_path: Path = Path("/data/orders.json")
 

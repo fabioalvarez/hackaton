@@ -1,0 +1,56 @@
+# Local environment: HAProxy in front of two instances of the API sharing a read-only data volume.
+# Use it through `make up` / `make down`.
+
+name: next
+
+x-api: &api
+  build:
+    context: ./api
+    dockerfile: ../Dockerfile
+  image: next-api:${TAG:-dev}
+  restart: unless-stopped
+  env_file: .env
+  volumes:
+    - orders-data:/data:ro
+  healthcheck:
+    test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8080/health', timeout=2)"]
+    interval: 5s
+    timeout: 3s
+    retries: 2
+    start_period: 10s
+  deploy:
+    resources:
+      limits:
+        cpus: "0.25"
+        memory: 256M
+
+services:
+  api-1:
+    <<: *api
+    environment:
+      INSTANCE_ID: api-1
+      DATA_PATH: /data/orders.json
+      PORT: "8080"
+
+  api-2:
+    <<: *api
+    environment:
+      INSTANCE_ID: api-2
+      DATA_PATH: /data/orders.json
+      PORT: "8080"
+
+  haproxy:
+    image: haproxy:2.9-alpine
+    restart: unless-stopped
+    ports:
+      - "8000:8080"        # the only published port
+    volumes:
+      - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      api-1:
+        condition: service_healthy
+      api-2:
+        condition: service_healthy
+
+volumes:
+  orders-data:

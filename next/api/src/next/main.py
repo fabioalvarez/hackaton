@@ -4,11 +4,8 @@ import uvicorn
 from fastapi import FastAPI
 
 from next.data import OrderRepository
-from next.observability import (
-    InstanceHeaderMiddleware,
-    RequestLogMiddleware,
-    configure_logging,
-)
+from next.middleware import InstanceHeaderMiddleware, RequestLogMiddleware
+from next.observability import configure_logging
 from next.routes import register_routes
 from next.settings import Settings
 
@@ -23,22 +20,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(InstanceHeaderMiddleware, instance_id=settings.instance_id)
     app.add_middleware(RequestLogMiddleware, instance_id=settings.instance_id)
 
+    app.state.settings = settings
     app.state.repository = OrderRepository(settings.data_path)
+    
     register_routes(app)
 
     return app
 
 
-if __name__ == "__main__":
+def run() -> None:
+    """Entry point of the `next` command: starts the API."""
     settings = Settings()
 
     configure_logging(settings.log_level)
 
-    app = create_app(settings)
-    
     uvicorn.run(
-        app,
+        create_app(settings),
         host="0.0.0.0",
         port=settings.port,
         log_config=None,
     )
+
+
+if __name__ == "__main__":
+    run()

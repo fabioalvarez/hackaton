@@ -5,9 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, ValidationError
 
-
-class DataError(Exception):
-    """The data file is missing, unreadable or invalid."""
+from next.errors import DataError
 
 
 class Order(BaseModel):
@@ -31,6 +29,8 @@ class OrderRepository:
 
     def read(self) -> OrdersData:
         try:
-            return OrdersData.model_validate_json(self._path.read_bytes())
+            data = self._path.read_bytes()
+            
+            return OrdersData.model_validate_json(data)
         except (OSError, ValidationError) as error:
             raise DataError(str(error)) from error
