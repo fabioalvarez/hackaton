@@ -16,16 +16,18 @@ Todos se ejecutan dentro de `next/`. `make help` muestra la lista.
 |---|---|
 | `make env` | Crea el entorno `api/.venv` (`uv sync`) y el archivo `.env` a partir de `.env.example` si no existe |
 | `make up-local` | Levanta **una** instancia de la API **sin Docker** en http://localhost:8080 |
-| `make up` | Levanta con Docker **HAProxy y 2 instancias** (`api-1`, `api-2`) en http://localhost:8000. Si Docker está apagado, lo inicia y espera a que esté listo. Carga `store/data/orders.json` en el volumen si está vacío |
+| `make up` | Levanta con Docker **HAProxy y 2 réplicas de la API** en http://localhost:8000. Si Docker está apagado, lo inicia y espera a que esté listo. Carga `store/data/orders.json` en el volumen si está vacío |
 | `make down` | Elimina contenedores, red y volumen de datos |
 | `make logs` | Sigue los logs de HAProxy y de las 2 instancias |
 | `make load-data FILE=ruta` | Reemplaza el archivo de datos del volumen por el indicado |
 | `make corrupt` | Deja inválido el archivo de datos del volumen, para probar que el respaldo lo restaura |
 | `make delete-data` | Borra el archivo de datos del volumen, para probar que el respaldo lo restaura |
-| `make kill-instance` | Mata una instancia (`INSTANCE=api-1`) y comprueba que el servicio sigue respondiendo |
+| `make deploy TAG=1.1.0` | Despliega una versión nueva: levanta 2 contenedores al lado de los actuales y apaga los actuales solo si los nuevos funcionan. Si fallan, los descarta y el servicio no se interrumpe |
+| `make kill-instance` | Mata un contenedor de la API y comprueba que el servicio sigue respondiendo |
+| `make deploy-broken` | Despliega una versión que no arranca y comprueba que se descarta sin afectar el servicio |
 | `make test` | Ejecuta las pruebas de la API y del vigilante de respaldo |
 
-Con `make up`, la API solo se alcanza por HAProxy (puerto `8000`); las instancias no publican puerto. El header `X-Instance-Id` indica cuál respondió: `api-1` o `api-2`.
+Con `make up`, la API solo se alcanza por HAProxy (puerto `8000`); las instancias no publican puerto. El header `X-Instance-Id` indica cuál respondió (el ID de su contenedor).
 
 ```bash
 for i in $(seq 10); do curl -s -o /dev/null -D - localhost:8000/orders | grep -i x-instance-id; done | sort | uniq -c
@@ -71,14 +73,14 @@ Variables de entorno (ninguna es un secreto):
 Se leen de las variables de entorno y, si no están, del archivo `.env` (copia local de `.env.example`, ignorado por git y fuera del contexto de Docker).
 
 - `make up-local` carga los valores del `.env`.
-- `make up` pasa el `.env` a las instancias, pero fija `DATA_PATH=/data/orders.json`, `PORT=8080` y `INSTANCE_ID` (`api-1`, `api-2`), porque dentro del contenedor esos valores son otros. Los datos viven en el volumen `orders-data`, montado como solo lectura.
+- `make up` pasa el `.env` a las instancias, pero fija `DATA_PATH=/data/orders.json` y `PORT=8080`, porque dentro del contenedor esos valores son otros. El `INSTANCE_ID` de cada una es el ID de su contenedor. Los datos viven en el volumen `orders-data`, montado como solo lectura.
 
 ## Estructura
 
 ```
 next/
 ├── Makefile
-├── docker-compose.yml     # HAProxy + api-1 + api-2 + backup + volumen de datos
+├── docker-compose.yml     # HAProxy + api (2 réplicas) + backup + volumen de datos
 ├── README.md
 ├── .env.example           # variables de ejemplo (el .env real no se sube)
 ├── .gitignore
@@ -105,6 +107,12 @@ next/
 │   │   ├── utils.py         # funciones auxiliares (hash, lectura, reemplazo atómico)
 │   │   ├── logs.py          # una línea JSON por evento
 │   │   └── settings.py      # variables de entorno
+│   └── tests/
+├── deploy/                # script de despliegue (Python)
+│   ├── src/
+│   │   ├── main.py          # recibe la etiqueta y arranca el despliegue
+│   │   ├── deployer.py      # el flujo: crear, esperar, mantener o descartar
+│   │   └── docker.py        # llamadas a docker
 │   └── tests/
 ├── haproxy/haproxy.cfg    # balanceador
 └── store/                 # todos los datos

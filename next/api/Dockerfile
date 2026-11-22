@@ -27,6 +27,10 @@ COPY --from=build /app/.venv /app/.venv
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1
 
+# Only for the rollback test (`make deploy BREAK=1`): a version whose container cannot start.
+ARG BREAK=
+RUN if [ -n "$BREAK" ]; then rm /app/.venv/bin/next; fi
+
 # Runs as non-root.
 USER 10001
 EXPOSE 8080
