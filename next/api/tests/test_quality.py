@@ -32,7 +32,7 @@ def test_qa03_recreated_instance_serves_the_same_data(make_client):
 def test_qa03_new_data_version_is_served_without_restart(client, data_file):
     data_file.write_text(json.dumps({"data_version": "new-version", "orders": []}))
 
-    assert client.get("/orders").json()["data_version"] == "new-version"
+    assert client.get("/orders").headers["X-Data-Version"] == "new-version"
 
 
 # --- QA-04 · Recoverability: a defective version must fail its health check -----
@@ -137,3 +137,10 @@ def test_qa06_unhandled_error_logs_where_it_happened(client, logs):
     assert response.headers["X-Instance-Id"] == "instance-A"
     assert record.fields == {"instance": "instance-A", "method": "GET", "path": "/boom"}
     assert record.exc_info is not None
+
+
+@pytest.mark.parametrize("path", ["/health", "/orders"])
+def test_qa04_an_answer_without_data_has_no_version(client, data_file, path):
+    data_file.unlink()
+
+    assert "X-Data-Version" not in client.get(path).headers

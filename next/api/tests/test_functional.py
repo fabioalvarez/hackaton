@@ -7,22 +7,49 @@ def test_rf01_orders_returns_all_orders(client, sample_data):
     assert client.get("/orders").json()["orders"] == sample_data["orders"]
 
 
-def test_rf02_orders_includes_data_version(client, sample_data):
-    assert client.get("/orders").json()["data_version"] == sample_data["data_version"]
+def test_rf02_orders_response_includes_the_data_version(client, sample_data):
+    assert client.get("/orders").headers["X-Data-Version"] == sample_data["data_version"]
 
 
-def test_rf03_home_lists_routes(client):
+def test_rf02_the_version_is_not_repeated_in_the_body(client):
+    assert "data_version" not in client.get("/orders").json()
+
+
+def test_rf03_home_is_an_html_page(client):
     response = client.get("/")
 
     assert response.status_code == 200
-    assert response.json() == {"service": "Test Service", "routes": ["/health", "/orders"]}
+    assert response.headers["content-type"].startswith("text/html")
+    assert "Nodo Ruta" in response.text
+
+
+def test_rf03_home_shows_the_service_and_the_instance_that_served_it(client):
+    page = client.get("/").text
+
+    assert "Test Service" in page
+    assert "instance-A" in page
+
+
+def test_rf03_home_links_to_the_other_pages(client):
+    page = client.get("/").text
+
+    assert 'href="/orders"' in page
+    assert 'href="/health"' in page
+
+
+def test_rf03_home_only_confirms_the_service_and_shows_no_data(client):
+    page = client.get("/").text
+
+    assert "ORD-001" not in page
+    assert "data_version" not in page
 
 
 def test_rf04_health_is_ok(client, sample_data):
     response = client.get("/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "data_version": sample_data["data_version"]}
+    assert response.json() == {"status": "ok"}
+    assert response.headers["X-Data-Version"] == sample_data["data_version"]
 
 
 @pytest.mark.parametrize("path", ["/", "/health", "/orders"])

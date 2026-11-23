@@ -1,12 +1,84 @@
-"""The pure parts of the verification tool: what it parses, counts and reports."""
+"""The verification tool: what it declares, reads, counts and reports. (The checks themselves run against the environment.)"""
 
 from datetime import datetime, timezone
 
-from checks_constraints import find_secrets
-from report import markdown
-from result import Result
-from system import Response, down_events, success_rate
+import pytest
 
+import checks_constraints
+import checks_functional
+import checks_quality
+import commands
+import main
+from checks_constraints import find_secrets
+from environment import down_events
+from report import markdown, sort_key
+from result import Requirement, Result, check
+from service import Response, parse_json, success_rate
+from watching import describe_backup, describe_event, describe_haproxy
+
+
+# --- What the tool declares ----------------------------------------------------------
+
+def test_every_requirement_is_checked_exactly_once():
+    ids = [id for each in main.ALL_CHECKS for id in each.ids]
+
+    assert len(ids) == len(set(ids))
+    assert sorted(ids) == ["CT-01", "CT-02", "QA-01", "QA-02", "QA-03", "QA-04", "QA-05", "QA-06", "QA-07",
+                           "RF-01", "RF-02", "RF-03", "RF-04", "RF-05", "TESTS"]
+
+
+def test_every_requirement_has_a_title_and_a_criterion():
+    for each in main.ALL_CHECKS:
+        for requirement in each.requirements:
+            assert requirement.title and requirement.criterion
+
+
+def test_all_the_quality_scenarios_change_the_environment_and_nothing_else_does():
+    assert all(each.changes_environment for each in checks_quality.CHECKS)
+    assert not any(each.changes_environment for each in checks_functional.CHECKS + checks_constraints.CHECKS)
+
+
+def test_the_scenarios_that_bring_the_environment_up_themselves_do_not_need_it_before():
+    needing_nothing = {id for each in main.ALL_CHECKS if not each.needs_environment for id in each.ids}
+
+    assert needing_nothing == {"QA-05", "QA-07"}
+
+
+def test_a_requirement_builds_its_result_with_its_own_title_and_criterion():
+    requirement = Requirement("RF-99", "A title", "a criterion")
+    result = requirement.result("what was measured", True, ["proof"])
+
+    assert result == Result("RF-99", "A title", "a criterion", "what was measured", True, ["proof"])
+
+
+def test_the_check_decorator_records_what_the_function_checks():
+    first, second = Requirement("QA-91", "t", "c"), Requirement("QA-92", "t", "c")
+
+    @check(first, second, changes_environment=True)
+    def together():
+        pass
+
+    assert together.ids == ("QA-91", "QA-92") and together.changes_environment and together.needs_environment
+
+
+def test_a_check_that_breaks_is_reported_as_failed_with_its_requirements():
+    requirement = Requirement("RF-99", "A title", "a criterion")
+
+    @check(requirement)
+    def broken():
+        raise RuntimeError("it broke")
+
+    result = main.attempt(broken)[0]
+
+    assert result.id == "RF-99" and result.passed is False and "it broke" in result.measured
+
+
+def test_only_picks_the_checks_of_those_ids_and_everything_if_none():
+    assert main.choose(None) == main.ALL_CHECKS
+    assert [id for each in main.choose("qa-01") for id in each.ids] == ["QA-01", "QA-06"]   # they are the same incident
+
+
+# --- Reading and counting ------------------------------------------------------------
 
 def test_down_events_are_read_from_the_haproxy_log_in_utc():
     log = (
@@ -25,18 +97,22 @@ def test_other_servers_going_down_are_not_counted():
 
 
 def test_success_rate_counts_only_200s():
-    responses = [Response(200)] * 98 + [Response(503), Response(0)]
-
-    assert success_rate(responses) == 0.98
-
-
-def test_success_rate_of_no_responses_is_zero():
+    assert success_rate([Response(200)] * 98 + [Response(503), Response(0)]) == 0.98
     assert success_rate([]) == 0
 
 
-def test_instance_id_is_read_from_a_lowercase_header():
-    assert Response(200, {"x-instance-id": "abc123"}).instance == "abc123"
+def test_a_response_reads_its_instance_and_version_from_lowercase_headers():
+    response = Response(200, {"x-instance-id": "abc123", "x-data-version": "v1"})
 
+    assert response.instance == "abc123" and response.version == "v1"
+
+
+def test_a_page_that_is_not_json_has_no_body():
+    assert parse_json("<html></html>") is None
+    assert parse_json('{"a": 1}') == {"a": 1}
+
+
+# --- Secrets -------------------------------------------------------------------------
 
 def test_secrets_are_found():
     # Built here, piece by piece, so this file does not contain what the scanner looks for.
@@ -48,6 +124,8 @@ def test_secrets_are_found():
 def test_normal_text_has_no_secrets():
     assert find_secrets("DATA_PATH=/data/orders.json\nPORT=8080\nLOG_LEVEL=info\n# password: see the vault") == []
 
+
+# --- The report ----------------------------------------------------------------------
 
 def test_the_report_lists_every_result_and_the_total():
     results = [
@@ -62,10 +140,35 @@ def test_the_report_lists_every_result_and_the_total():
     assert "- la instancia abc fue detenida" in text
 
 
-# --- What is shown live ------------------------------------------------------
+def test_results_are_sorted_functional_then_constraints_then_tests_then_quality():
+    results = [Result(id, "t", "c", "m", True) for id in ("QA-02", "TESTS", "CT-01", "RF-05", "QA-01")]
 
-from live import describe_backup, describe_event, describe_haproxy  # noqa: E402
+    assert [r.id for r in sorted(results, key=sort_key)] == ["RF-05", "CT-01", "TESTS", "QA-01", "QA-02"]
 
+
+# --- Versions ------------------------------------------------------------------------
+
+def test_next_version_follows_the_last_numbered_one(tmp_path, monkeypatch):
+    (tmp_path / ".deploy-history").write_text("1.5.0\nv1\nv2\nweird\n")
+    monkeypatch.setattr(commands, "ROOT", tmp_path)
+
+    assert commands.next_version() == "v3"
+
+
+def test_the_first_version_is_v1_and_the_current_one_is_dev(tmp_path, monkeypatch):
+    monkeypatch.setattr(commands, "ROOT", tmp_path)
+
+    assert commands.next_version() == "v1" and commands.current_tag() == "dev"
+
+
+def test_an_empty_history_means_dev(tmp_path, monkeypatch):
+    (tmp_path / ".deploy-history").write_text("")
+    monkeypatch.setattr(commands, "ROOT", tmp_path)
+
+    assert commands.current_tag() == "dev"
+
+
+# --- What is told while the checks run -------------------------------------------------
 
 def test_container_events_are_described_in_words():
     assert describe_event("die|next-api-1") == ("🔻", "api-1 se detuvo")

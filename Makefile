@@ -1,14 +1,15 @@
 # Nodo Ruta · orders API
 # Usage: `make help`
 
+APP     := next
 PORT    := 8000
-API     := api
-FILE    ?= store/data/orders.json
+API     := $(APP)/api
+FILE    ?= $(APP)/store/data/orders.json
 VOLUME  := next_orders-data
-COMPOSE := docker compose
+COMPOSE := docker compose -f $(APP)/docker-compose.yml
 
 # Version of the image that runs: the last one deployed (`make deploy`), or `dev`.
-TAG     ?= $(shell tail -n 1 .deploy-history 2>/dev/null || echo dev)
+TAG     ?= $(or $(strip $(shell tail -n 1 $(APP)/.deploy-history 2>/dev/null)),dev)
 export TAG
 
 .DEFAULT_GOAL := help
@@ -19,18 +20,18 @@ help: ## Show the available commands
 
 # ---------- Environment ----------
 
-env: .env ## Create the environment (api/.venv) and the .env file if missing
+env: $(APP)/.env ## Create the environment (next/api/.venv) and the .env file if missing
 	uv sync --directory $(API)
 
-.env:
-	cp .env.example .env
+$(APP)/.env:
+	cp $(APP)/.env.example $(APP)/.env
 
 # ---------- Run ----------
 
 up-local: env ## Run one API instance without Docker, on http://localhost:8080
-	uv run --directory $(API) --env-file $(CURDIR)/.env next
+	uv run --directory $(API) --env-file $(CURDIR)/$(APP)/.env next
 
-up: .env check-docker ## Run HAProxy + 2 API replicas with Docker, on http://localhost:8000
+up: $(APP)/.env check-docker ## Run HAProxy + 2 API replicas with Docker, on http://localhost:8000
 	$(COMPOSE) up --no-start --build
 
 	@$(MAKE) --no-print-directory load-data
@@ -49,14 +50,14 @@ down: ## Remove containers, network and data volume
 logs: ## Follow the logs of all services
 	$(COMPOSE) logs -f -t
 
-load-data: ## Load a data file into the volume (default: store/data/orders.json)
+load-data: ## Load a data file into the volume (default: next/store/data/orders.json)
 	@test -f "$(FILE)" || { echo "File not found: $(FILE)"; exit 1; }
 	docker run --rm -v $(VOLUME):/data -v "$(abspath $(FILE)):/src/orders.json:ro" alpine \
 		sh -c 'cp /src/orders.json /data/.orders.tmp && chmod 644 /data/.orders.tmp && mv /data/.orders.tmp /data/orders.json'
 
-deploy: .env check-docker ## Deploy a new version next to the current one: make deploy TAG=1.1.0
+deploy: $(APP)/.env check-docker ## Deploy a new version next to the current one: make deploy TAG=1.1.0
 	@test "$(origin TAG)" = "command line" || { echo "Usage: make deploy TAG=1.1.0"; exit 1; }
-	python3 deploy/src/main.py $(TAG) $(if $(BREAK),--break)
+	cd $(APP) && python3 deploy/src/main.py $(TAG) $(if $(BREAK),--break)
 
 check-docker:
 	@docker info >/dev/null 2>&1 || { \
@@ -68,7 +69,7 @@ check-docker:
 # ---------- Tests ----------
 
 test: env ## Run the tests
-	uv run --directory $(API) pytest tests $(CURDIR)/backup/tests $(CURDIR)/deploy/tests $(CURDIR)/verify/tests
+	uv run --directory $(API) pytest tests $(CURDIR)/$(APP)/backup/tests $(CURDIR)/$(APP)/deploy/tests $(CURDIR)/$(APP)/verify/tests
 
 
 # ---------- Validation (manual checks against the running environment) ----------
@@ -92,4 +93,4 @@ deploy-broken: ## Deploy a version that cannot start and check that it is rolled
 	@for i in $$(seq 20); do curl -s -o /dev/null -w "%{http_code}\n" localhost:$(PORT)/orders; done | sort | uniq -c
 
 verify: ## Check every requirement and quality scenario: make verify (YES=1 skips the question, STEP=1 waits for Enter before each scenario, ONLY=QA-01,RF-02 picks some)
-	python3 verify/src/main.py $(if $(YES),--yes) $(if $(STEP),--step) $(if $(ONLY),--only $(ONLY))
+	python3 $(APP)/verify/src/main.py $(if $(YES),--yes) $(if $(STEP),--step) $(if $(ONLY),--only $(ONLY))

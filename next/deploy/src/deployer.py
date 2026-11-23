@@ -84,8 +84,11 @@ class Deployer:
 
     def record(self, tag: str) -> None:
         """The history has one tag per line; the last one is the version that runs."""
-        with self.history_file.open("a") as history:
-            history.write(f"{tag}\n")
+        versions = self.history_file.read_text().split() if self.history_file.exists() else []
+
+        if versions[-1:] != [tag]:
+            with self.history_file.open("a") as history:
+                history.write(f"{tag}\n")
 
     def remove_old_images(self) -> None:
         """Keeps the images of the last versions deployed, and removes the rest."""

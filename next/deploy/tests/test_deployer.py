@@ -169,3 +169,10 @@ def test_images_are_not_touched_after_a_failed_deploy(history_file):
     deployer(docker, history_file).deploy("bad")
 
     assert docker.removed_images == []
+
+
+def test_a_version_is_not_recorded_twice_in_a_row(history_file):
+    history_file.write_text("v1\n")
+    Deployer(FakeDocker("healthy"), history_file, sleep=lambda seconds: None).deploy("v1")
+
+    assert history_file.read_text() == "v1\n"

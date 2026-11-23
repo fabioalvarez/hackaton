@@ -15,9 +15,15 @@ class Order(BaseModel):
 
 
 class OrdersData(BaseModel):
-    """Content of the data file. Also used as the `/orders` response."""
+    """Content of the data file."""
 
     data_version: str = Field(min_length=1)
+    orders: list[Order]
+
+
+class OrdersResponse(BaseModel):
+    """The `/orders` response: the orders only. Their version travels in the X-Data-Version header."""
+
     orders: list[Order]
 
 

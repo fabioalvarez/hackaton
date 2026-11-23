@@ -4,4 +4,3 @@ __pycache__/
 .env
 backups/
 .deploy-history
-reports/

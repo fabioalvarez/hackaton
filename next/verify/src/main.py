@@ -1,37 +1,95 @@
-"""Usage: python main.py [--only QA-01,RF-02] [--yes] [--step]
+"""Checks the requirements and quality scenarios against the running environment, showing what
+happens as it happens, and keeps the evidence in `validations/verification.md`.
 
-Checks the requirements and quality scenarios against the running environment (`make up`),
-showing what happens as it happens, and writes `reports/verification.md`.
---step waits for Enter before each scenario, so the person presenting can explain it.
+    make verify                     all of them
+    make verify ONLY=QA-01,RF-02    only those (the report is not updated)
+    make verify STEP=1              waits for Enter before each scenario that changes the environment
+    make verify YES=1               does not ask before the scenarios that change the environment
+
+Where things are:
+    checks_functional.py   RF-01 to RF-05
+    checks_constraints.py  CT-01, CT-02 and the automated tests
+    checks_quality.py      QA-01 to QA-07
+    commands.py, service.py, environment.py   what the checks use: commands, the service, containers and data
+    live.py, watching.py   what is printed while they run
+    result.py, report.py   what a check reports, and the report
 """
 
+import argparse
 import sys
-from pathlib import Path
+from contextlib import nullcontext
 
 import checks_constraints
 import checks_functional
 import checks_quality
 import live
-from report import print_summary, write_markdown
+from commands import ROOT
+from environment import announce_instances
+from report import print_summary, sort_key, write_markdown
 from result import Result
-from system import ROOT, announce_instances, get
+from service import get
+from watching import Watching
 
-REPORT = ROOT / "reports" / "verification.md"
-CHANGES_THE_ENVIRONMENT = {"QA-01", "QA-02", "QA-03", "QA-04", "QA-05", "QA-06", "QA-07"}
-BRINGS_IT_UP_ITSELF = {"QA-05", "QA-07"}
-
-
-def select(checks: list, only: set[str]) -> list:
-    return [check for check in checks if not only or only & set(check.ids)]
+REPORT = ROOT.parent / "validations" / "verification.md"
+ALL_CHECKS = checks_functional.CHECKS + checks_constraints.CHECKS + checks_quality.CHECKS
+GROUPS = {"functional": "Requisitos funcionales", "non-functional": "Requisitos no funcionales (atributos de calidad y constraints)"}
 
 
-def run_check(check) -> list[Result]:
+def read_options() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--only", help="IDs separated by commas, for example QA-01,RF-02")
+    parser.add_argument("--yes", action="store_true", help="do not ask before the scenarios that change the environment")
+    parser.add_argument("--step", action="store_true", help="wait for Enter before each scenario that changes the environment")
+
+    return parser.parse_args()
+
+
+def choose(only: str | None) -> list:
+    if not only:
+        return ALL_CHECKS
+
+    wanted = {id.strip().upper() for id in only.split(",")}
+
+    return [check for check in ALL_CHECKS if wanted & set(check.ids)]
+
+
+def confirmed(checks: list, yes: bool) -> bool:
+    """The scenarios that change the environment ask first, unless told not to."""
+    risky = [check for check in checks if check.changes_environment]
+
+    if yes or not risky:
+        return True
+
+    print("Estas comprobaciones cambian el entorno: matan y recrean contenedores, rompen los datos,")
+    print("despliegan versiones y lo bajan y levantan por completo.")
+    print("Al terminar el entorno queda levantado. El volumen de datos vuelve a los datos iniciales")
+    print("(store/data/orders.json): lo que hayas cargado con `make load-data` se pierde.")
+    print("Los respaldos de store/backups no se borran.")
+    print("Se ejecutarán:", ", ".join(id for check in risky for id in check.ids))
+
+    return sys.stdin.isatty() and input("¿Continuar? [s/N] ").strip().lower() == "s"
+
+
+def group_of(check) -> str:
+    return "functional" if check.ids[0].startswith("RF") else "non-functional"
+
+
+def attempt(check) -> list[Result]:
+    """Runs a check. One that breaks is reported as failed, so it does not hide the others."""
     try:
-        results = check()
-    except Exception as error:  # a check that breaks must not hide the others
-        results = [Result(i, "la comprobación falló", "—", f"error: {error}", False) for i in check.ids]
+        outcome = check()
+    except Exception as error:
+        return [requirement.result(f"error: {error}", passed=False) for requirement in check.requirements]
 
-    results = results if isinstance(results, list) else [results]
+    return outcome if isinstance(outcome, list) else [outcome]
+
+
+def run_check(check, step: bool) -> list[Result]:
+    if step and check.changes_environment:
+        live.pause(f"Siguiente: {', '.join(check.ids)}")
+
+    with Watching(ROOT) if check.changes_environment else nullcontext():
+        results = attempt(check)
 
     for result in results:
         live.verdict(result)
@@ -39,68 +97,39 @@ def run_check(check) -> list[Result]:
     return results
 
 
-def confirm(checks: list) -> bool:
-    print("Estas comprobaciones cambian el entorno: matan y recrean contenedores, rompen los datos,")
-    print("despliegan versiones y lo bajan y levantan por completo.")
-    print("Al terminar el entorno queda levantado. El volumen de datos vuelve a los datos iniciales")
-    print("(store/data/orders.json): lo que hayas cargado con `make load-data` se pierde.")
-    print("Los respaldos de store/backups no se borran.")
-    print("Se ejecutarán:", ", ".join(i for c in checks for i in c.ids))
-
-    return sys.stdin.isatty() and input("¿Continuar? [s/N] ").strip().lower() == "s"
-
-
 def main() -> None:
-    arguments = sys.argv[1:]
-    only = set()
+    options = read_options()
+    checks = choose(options.only)
 
-    if "--only" in arguments:
-        only = {i.strip().upper() for i in arguments[arguments.index("--only") + 1].split(",")}
-
-    safe = select(checks_functional.CHECKS + checks_constraints.CHECKS, only)
-    risky = select(checks_quality.CHECKS, only)
-    needed = {i for c in safe + risky for i in c.ids}
-
-    if not needed:
+    if not checks:
         sys.exit("No hay comprobaciones para esos IDs.")
 
-    if not needed <= BRINGS_IT_UP_ITSELF and get("/health").status != 200:
+    if any(check.needs_environment for check in checks) and get("/health").status != 200:
         sys.exit("El entorno no está levantado: ejecuta `make up` primero.")
 
-    if risky and "--yes" not in arguments and not confirm(risky):
+    if not confirmed(checks, options.yes):
         sys.exit("Cancelado. Usa `make verify YES=1` para ejecutar todo sin preguntar.")
 
-    step = "--step" in arguments
-    results = []
+    results, group = [], None
 
-    functional = [check for check in safe if check.ids[0].startswith("RF")]
-    non_functional = [check for check in safe if check not in functional]
+    for check in checks:
+        if group_of(check) != group:
+            group = group_of(check)
+            live.heading(GROUPS[group])
 
-    if functional:
-        live.heading("Requisitos funcionales")
-        if get("/health").status == 200:
-            announce_instances()
+            if group == "functional":
+                announce_instances()
 
-        for check in functional:
-            results += run_check(check)
+        results += run_check(check, options.step)
 
-    if non_functional or risky:
-        live.heading("Requisitos no funcionales (atributos de calidad y constraints)")
-
-    for check in non_functional:
-        results += run_check(check)
-
-    for check in risky:
-        if step:
-            live.pause(f"Siguiente: {', '.join(check.ids)}")
-
-        with live.Watching(ROOT):
-            results += run_check(check)
-
-    results.sort(key=lambda r: (r.id[:2] == "QA", r.id[:2] == "CT", r.id))
+    results.sort(key=sort_key)
     print_summary(results)
-    write_markdown(results, REPORT)
-    print(f"Informe: {REPORT.relative_to(ROOT)}")
+
+    if options.only:
+        print("\nEjecución parcial: el informe no se actualiza.")
+    else:
+        write_markdown(results, REPORT)
+        print(f"\nInforme: {REPORT.relative_to(ROOT.parent)}")
 
     sys.exit(0 if all(r.passed for r in results) else 1)
 

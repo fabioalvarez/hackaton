@@ -2,15 +2,18 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, FastAPI, Request
+from fastapi import APIRouter, Depends, FastAPI, Request, Response
+from fastapi.responses import HTMLResponse
 from starlette.exceptions import HTTPException
 
-from next.data import OrderRepository, OrdersData
+from next.data import OrderRepository, OrdersResponse
 from next.errors import DataError, data_error_handler, http_error_handler
+from next.pages import render
 from next.settings import Settings
-from next.utils import list_route_paths
 
 router = APIRouter()
+
+VERSION_HEADER = "X-Data-Version"   # the version of the data that answered, in the response
 
 
 def get_repository(request: Request) -> OrderRepository:
@@ -25,25 +28,42 @@ Repository = Annotated[OrderRepository, Depends(get_repository)]
 AppSettings = Annotated[Settings, Depends(get_settings)]
 
 
-@router.get("/")
-def home(settings: AppSettings) -> dict:
-    return {"service": settings.service_name, "routes": list_route_paths(router)}
+def wants_html(request: Request) -> bool:
+    """A browser asks for HTML; programs (curl, the balancer, the tests) get the JSON."""
+    return "text/html" in request.headers.get("accept", "")
+
+
+def page(name: str, settings: Settings) -> HTMLResponse:
+    return HTMLResponse(render(name, settings.service_name, settings.instance_id), headers={"Vary": "Accept"})
+
+
+@router.get("/", response_class=HTMLResponse)
+def home(settings: AppSettings) -> HTMLResponse:
+    return page("home", settings)
 
 
 @router.get("/health")
-def health(request: Request, repository: Repository) -> dict:
+def health(request: Request, response: Response, repository: Repository, settings: AppSettings):
+    if wants_html(request):
+        return page("health", settings)
+
     data = repository.read()
-    request.state.data_version = data.data_version
+    response.headers["Vary"] = "Accept"
+    response.headers[VERSION_HEADER] = data.data_version
 
-    return {"status": "ok", "data_version": data.data_version}
+    return {"status": "ok"}
 
 
-@router.get("/orders")
-def orders(request: Request, repository: Repository) -> OrdersData:
+@router.get("/orders", response_model=OrdersResponse)
+def orders(request: Request, response: Response, repository: Repository, settings: AppSettings):
+    if wants_html(request):
+        return page("orders", settings)
+
     data = repository.read()
-    request.state.data_version = data.data_version
-    
-    return data
+    response.headers["Vary"] = "Accept"
+    response.headers[VERSION_HEADER] = data.data_version
+
+    return OrdersResponse(orders=data.orders)
 
 
 def register_routes(app: FastAPI) -> None:

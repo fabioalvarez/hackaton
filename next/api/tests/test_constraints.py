@@ -54,6 +54,27 @@ def test_ct02_write_methods_are_rejected(client, method):
     assert getattr(client, method)("/orders").status_code == 405
 
 
+@pytest.mark.parametrize("path", ["/", "/orders", "/health"])
+def test_ct02_pages_load_nothing_from_outside(client, path):
+    page = client.get(path, headers={"Accept": "text/html"}).text
+
+    assert "http://" not in page and "https://" not in page
+
+
+@pytest.mark.parametrize("path", ["/", "/orders", "/health"])
+def test_ct02_pages_escape_the_service_name_and_the_instance(data_file, path):
+    from fastapi.testclient import TestClient
+
+    from next.main import create_app
+    from next.settings import Settings
+
+    settings = Settings(data_path=data_file, instance_id="<b>x</b>", service_name="<i>y</i>")
+    page = TestClient(create_app(settings)).get(path, headers={"Accept": "text/html"}).text
+
+    assert "<i>y</i>" not in page and "<b>x</b>" not in page
+    assert "&lt;i&gt;y&lt;/i&gt;" in page and "&lt;b&gt;x&lt;/b&gt;" in page
+
+
 def test_ct02_only_the_expected_routes_exist():
     paths = {route.path for route in router.routes}
 

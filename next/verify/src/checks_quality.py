@@ -1,8 +1,13 @@
-"""Quality scenarios (QA-01 to QA-07). Each one causes the stimulus and measures the response,
-telling what it does as it goes.
+"""Quality scenarios (QA-01 to QA-07).
 
-These checks change the environment: they kill and recreate containers, break the data, deploy
-versions and take everything down. They leave it running at the end.
+Every scenario has the same shape:
+    1. start from a working service,
+    2. cause the stimulus, telling what is done,
+    3. measure the response,
+    4. report it against the criterion of the design.
+
+They change the environment (kill and recreate containers, break the data, deploy versions, take
+everything down) and leave it running at the end.
 """
 
 import hashlib
@@ -11,213 +16,182 @@ import time
 from pathlib import Path
 
 import live
-from result import Result, covers
-from system import (ROOT, Traffic, announce_instances, api_containers, corrupt_data, current_tag,
-                    delete_data, get, haproxy_down_events, run, run_showing, short, success_rate,
-                    volume_file, volume_hash, wait_until, wait_until_balancer_uses)
+from commands import ROOT, current_tag, make, next_version, run, run_showing
+from environment import (announce_instances, api_containers, corrupt_data, delete_data, name_of, project_resources,
+                         restore_replicas, seconds_until_haproxy_removed, short, start_from_a_working_service,
+                         volume_file, volume_hash, wait_until_balancer_uses, haproxy_down_events)
+from result import Requirement, check
+from service import Traffic, get, success_rate, wait_until
 
-PROJECT_LABEL = "label=com.docker.compose.project=next"
-
-
-def restore_replicas() -> None:
-    """Brings the service back to its 2 replicas and waits until the balancer uses them."""
-    run("docker", "compose", "up", "-d", "--no-deps", "--wait", "api")
-    wait_until_balancer_uses(api_containers())
-
-
-def start_from_a_working_service() -> None:
-    """Every scenario starts with 2 replicas that the balancer is already using."""
-    if len(api_containers()) < 2:
-        restore_replicas()
-
-    wait_until_balancer_uses(api_containers())
-    announce_instances()
+QA_01 = Requirement("QA-01", "Una instancia se detiene con consultas en curso", "≥ 99 % de solicitudes exitosas; HAProxy deja de enviarle solicitudes en ≤ 10 s")
+QA_02 = Requirement("QA-02", "Los datos se pierden", "restaurados sin intervención en ≤ 5 min; versión y contenido idénticos al respaldo")
+QA_03 = Requirement("QA-03", "Se recrea un contenedor del servicio", "0 pedidos perdidos o modificados; misma versión antes y después")
+QA_04 = Requirement("QA-04", "Se publica una versión que no funciona", "servicio restablecido en ≤ 5 min con la versión anterior; 0 pedidos perdidos")
+QA_05 = Requirement("QA-05", "Crear el despliegue completo desde cero", "operativo con las 2 instancias en ≤ 10 min, con un solo comando")
+QA_06 = Requirement("QA-06", "Diagnosticar el incidente con los logs", "instancia afectada identificada en ≤ 120 s; 100 % de las solicitudes asociadas a una instancia")
+QA_07 = Requirement("QA-07", "Retirar los recursos al terminar las pruebas", "0 recursos activos en ≤ 15 min; factores de consumo identificados para el 100 % de los componentes")
 
 
-def sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+def begin(*requirements: Requirement) -> None:
+    """The start of a scenario: says what it checks, and makes sure the service works."""
+    live.scenario(requirements)
+    start_from_a_working_service()
 
 
 def seconds_text(seconds: float | None) -> str:
     return "no ocurrió" if seconds is None else f"{seconds:.1f} s"
 
 
-# --- QA-01 and QA-06: an instance fails ---------------------------------------
+# --- QA-01 and QA-06: an instance fails ---------------------------------------------
 
-@covers("QA-01", "QA-06")
-def instance_failure() -> list[Result]:
-    live.scenario("QA-01 y QA-06", "Una instancia se detiene con consultas en curso",
-                  "≥ 99 % de solicitudes exitosas; HAProxy la saca en ≤ 10 s; la causa se encuentra con los logs en ≤ 120 s")
-    start_from_a_working_service()
+@check(QA_01, QA_06, changes_environment=True)
+def an_instance_fails():
+    begin(QA_01, QA_06)
+    victim = api_containers()[0]
+    known = {short(c) for c in api_containers()}
 
-    before = api_containers()
-    known = {short(c) for c in before}
-    victim = live.names.get(short(before[0]), short(before[0]))
+    with Traffic() as traffic:
+        live.step("empiezo a enviar una consulta cada 0,25 s a través del balanceador")
+        time.sleep(3)
 
-    live.say("empiezo a enviar una consulta cada 0,25 s a través del balanceador", "▶")
-    traffic = Traffic()
-    traffic.start()
-    time.sleep(3)
+        live.stimulus(f"detengo la instancia {name_of(victim)} de golpe (docker kill)")
+        killed_at = time.time()
+        run("docker", "kill", victim)
+        wait_until(lambda: haproxy_down_events(killed_at - 1), 60)      # until HAProxy notices
+        time.sleep(5)
 
-    live.say(f"detengo la instancia {victim} de golpe (docker kill)", "⚡", "yellow")
-    killed_at = time.time()
-    run("docker", "kill", before[0])
-    wait_until(lambda: haproxy_down_events(killed_at - 1), 60)
-    time.sleep(5)
-    responses = traffic.stop()
-
-    live.say("levanto de nuevo la réplica para dejar el entorno completo", "♻️")
+    live.restoring("levanto de nuevo la réplica para dejar el entorno completo")
     restore_replicas()
 
-    events = [e for e in haproxy_down_events(killed_at - 1) if e >= killed_at - 1]
-    removed_after = max(0.0, min(events) - killed_at) if events else None
-    rate = success_rate(responses)
-    traced = [r for r in responses if r.status == 200]
-    untraceable = [r for r in traced if r.instance not in known]
+    removed_after = seconds_until_haproxy_removed(killed_at)
+    rate = success_rate(traffic.responses)
+    answered = [r for r in traffic.responses if r.status == 200]
+    unknown = [r for r in answered if r.instance not in known]
 
-    qa01 = Result("QA-01", "Una instancia se detiene con consultas en curso",
-                  "≥ 99 % de solicitudes exitosas; HAProxy deja de enviarle solicitudes en ≤ 10 s",
-                  f"{rate:.1%} de {len(responses)} solicitudes; HAProxy la sacó en {seconds_text(removed_after)}",
-                  rate >= 0.99 and removed_after is not None and removed_after <= 10,
-                  [f"instancia detenida: {victim}"])
-
-    qa06 = Result("QA-06", "Diagnosticar el incidente con los logs",
-                  "instancia afectada identificada en ≤ 120 s; 100 % de las solicitudes asociadas a una instancia",
-                  f"identificada en {seconds_text(removed_after)} (log de HAProxy: `Server api/... DOWN`); "
-                  f"{len(traced) - len(untraceable)} de {len(traced)} solicitudes con instancia conocida",
-                  removed_after is not None and removed_after <= 120 and not untraceable,
-                  ["comandos de diagnóstico: `docker compose ps -a` y `docker compose logs haproxy`"])
-
-    return [qa01, qa06]
+    return [
+        QA_01.result(f"{rate:.1%} de {len(traffic.responses)} solicitudes; HAProxy la sacó en {seconds_text(removed_after)}",
+                     rate >= 0.99 and removed_after is not None and removed_after <= 10,
+                     [f"instancia detenida: {name_of(victim)}"]),
+        QA_06.result(f"identificada en {seconds_text(removed_after)} (log de HAProxy: `Server api/... DOWN`); "
+                     f"{len(answered) - len(unknown)} de {len(answered)} solicitudes con instancia conocida",
+                     removed_after is not None and removed_after <= 120 and not unknown,
+                     ["comandos de diagnóstico: `docker compose ps -a` y `docker compose logs haproxy`"]),
+    ]
 
 
-# --- QA-02: the data is lost --------------------------------------------------
+# --- QA-02: the data is lost ---------------------------------------------------------
 
-@covers("QA-02")
-def data_loss() -> Result:
-    live.scenario("QA-02", "Los datos se pierden",
-                  "restaurados sin intervención en ≤ 5 min; versión y contenido idénticos al respaldo")
-    start_from_a_working_service()
+def sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
+
+@check(QA_02, changes_environment=True)
+def the_data_is_lost():
+    begin(QA_02)
     original = volume_hash()
     version = json.loads(volume_file())["data_version"]
     backup = ROOT / "store" / "backups" / f"orders-{version}.json"
-    live.say(f"el vigilante tiene un respaldo de la versión {version}; compruebo que es igual a los datos", "🔎")
+
+    live.found(f"el vigilante tiene un respaldo de la versión {version}; compruebo que es igual a los datos")
     backed_up = wait_until(lambda: backup.exists() and sha256(backup) == original, 30)
 
-    live.say("sigo consultando la API mientras se pierden los datos", "▶")
-    traffic = Traffic()
-    traffic.start()
-    time.sleep(2)
+    recovered_in = {}
+    with Traffic():
+        live.step("sigo consultando la API mientras se pierden los datos")
+        time.sleep(2)
 
-    recovery = {}
-    for cause, lose in (("archivo inválido", corrupt_data), ("archivo borrado", delete_data)):
-        live.say(f"dejo los datos así: {cause}", "⚡", "yellow")
-        lose()
-        recovery[cause] = wait_until(lambda: volume_hash() == original, 300)
-        live.say(f"los datos volvieron a ser idénticos al respaldo ({seconds_text(recovery[cause])})", "💾")
-        time.sleep(3)
+        for cause, lose in (("archivo inválido", corrupt_data), ("archivo borrado", delete_data)):
+            live.stimulus(f"dejo los datos así: {cause}")
+            lose()
+            recovered_in[cause] = wait_until(lambda: volume_hash() == original, 300)
+            live.say(f"los datos volvieron a ser idénticos al respaldo ({seconds_text(recovered_in[cause])})", "💾")
+            time.sleep(3)
 
-    traffic.stop()
     start_from_a_working_service()
+    restored = all(seconds is not None and seconds <= 300 for seconds in recovered_in.values())
 
-    ok = backed_up is not None and all(s is not None and s <= 300 for s in recovery.values())
-
-    return Result("QA-02", "Los datos se pierden",
-                  "restaurados sin intervención en ≤ 5 min; versión y contenido idénticos al respaldo",
-                  "; ".join(f"{cause}: {seconds_text(s)}" for cause, s in recovery.items())
-                  + f"; coincide con el respaldo de {version}: {'sí' if backed_up is not None else 'no'}",
-                  ok, [f"hash del respaldo = hash restaurado = {original[:16]}..."])
+    return QA_02.result("; ".join(f"{cause}: {seconds_text(s)}" for cause, s in recovered_in.items())
+                        + f"; coincide con el respaldo de {version}: {'sí' if backed_up is not None else 'no'}",
+                        backed_up is not None and restored,
+                        [f"hash del respaldo = hash restaurado = {original[:16]}..."])
 
 
-# --- QA-03: a container is recreated ------------------------------------------
+# --- QA-03: a container is recreated -------------------------------------------------
 
-@covers("QA-03")
-def recreated_container() -> Result:
-    live.scenario("QA-03", "Se recrea un contenedor del servicio",
-                  "0 pedidos perdidos o modificados; misma versión antes y después")
-    start_from_a_working_service()
+@check(QA_03, changes_environment=True)
+def a_container_is_recreated():
+    begin(QA_03)
 
-    live.say("consulto los pedidos antes de tocar nada", "▶")
-    before = get("/orders", show=True).body or {}
+    live.step("consulto los pedidos antes de tocar nada")
+    before = get("/orders", show=True)
 
     victim = api_containers()[0]
-    live.say(f"elimino el contenedor {live.names.get(short(victim), short(victim))} y dejo que se cree otro", "⚡", "yellow")
-    traffic = Traffic()
-    traffic.start()
-    run("docker", "rm", "-f", victim)
-    restore_replicas()
-    traffic.stop()
+    with Traffic():
+        live.stimulus(f"elimino el contenedor {name_of(victim)} y dejo que se cree otro")
+        run("docker", "rm", "-f", victim)
+        restore_replicas()
 
-    live.say("consulto los pedidos otra vez", "▶")
+    live.step("consulto los pedidos otra vez")
     announce_instances()
-    after = get("/orders", show=True).body or {}
-    lost = len(before.get("orders", [])) - len(after.get("orders", []))
+    after = get("/orders", show=True)
 
-    return Result("QA-03", "Se recrea un contenedor del servicio",
-                  "0 pedidos perdidos o modificados; misma versión antes y después",
-                  f"{lost} pedidos perdidos; versión {before.get('data_version')} → {after.get('data_version')}; "
-                  f"contenido {'igual' if before == after else 'distinto'}",
-                  before == after and lost == 0)
+    lost = len((before.body or {}).get("orders", [])) - len((after.body or {}).get("orders", []))
+    same = before.body == after.body and before.version == after.version
+
+    return QA_03.result(f"{lost} pedidos perdidos; versión {before.version} → {after.version}; contenido {'igual' if same else 'distinto'}",
+                        same and lost == 0)
 
 
-# --- QA-04: a defective version is deployed -----------------------------------
+# --- QA-04: a defective version is deployed ------------------------------------------
 
 def deploy(tag: str, broken: bool = False) -> tuple[int, str]:
-    command = ["python3", "deploy/src/main.py", tag] + (["--break"] if broken else [])
+    """`make deploy`, with its steps shown as they happen. Returns the exit code and the output."""
+    return run_showing("python3", "deploy/src/main.py", tag, *(["--break"] if broken else []))
 
-    return run_showing(*command)
 
+@check(QA_04, changes_environment=True)
+def a_defective_version_is_deployed():
+    begin(QA_04)
 
-@covers("QA-04")
-def defective_version() -> Result:
-    live.scenario("QA-04", "Se publica una versión que no funciona",
-                  "servicio restablecido en ≤ 5 min con la versión anterior; 0 pedidos perdidos")
-    start_from_a_working_service()
-
-    good = f"verify-{int(time.time())}"
-    live.say(f"primero despliego una versión buena ({good})", "🚀")
+    good = next_version()
+    live.deploying(f"primero despliego una versión buena ({good})")
     good_code, _ = deploy(good)
     announce_instances()
-    before = get("/orders", show=True).body
+    before = get("/orders", show=True)
 
-    live.say("ahora despliego una versión defectuosa, que no arranca, con consultas en curso", "🚀", "yellow")
-    traffic = Traffic()
-    traffic.start()
-    time.sleep(3)
-    started = time.monotonic()
-    broken_code, output = deploy("verify-broken", broken=True)
-    seconds = time.monotonic() - started
-    time.sleep(5)
-    responses = traffic.stop()
+    live.deploying("ahora despliego una versión defectuosa, que no arranca, con consultas en curso", "yellow")
+    with Traffic() as traffic:
+        time.sleep(3)
+        started = time.monotonic()
+        broken_code, output = deploy("broken", broken=True)
+        seconds = time.monotonic() - started
+        time.sleep(5)
 
-    live.say("compruebo que sigue corriendo la versión buena y que los datos no cambiaron", "🔎")
-    after = get("/orders", show=True).body
+    live.found("compruebo que sigue corriendo la versión buena y que los datos no cambiaron")
+    after = get("/orders", show=True)
+    same_data = before.body == after.body and before.version == after.version
     images = {run("docker", "inspect", "-f", "{{.Config.Image}}", c) for c in api_containers()}
-    failed = sum(r.status != 200 for r in responses)
-    kept = images == {f"next-api:{good}"} and current_tag() == good
+    failed = sum(r.status != 200 for r in traffic.responses)
+    good_version_stays = images == {f"next-api:{good}"} and current_tag() == good
 
-    return Result("QA-04", "Se publica una versión que no funciona",
-                  "servicio restablecido en ≤ 5 min con la versión anterior; 0 pedidos perdidos",
-                  f"descartada en {seconds:.0f} s (salida {broken_code}); versión vigente {current_tag()}; "
-                  f"{failed} solicitudes fallidas de {len(responses)}; datos {'iguales' if before == after else 'distintos'}",
-                  good_code == 0 and broken_code == 1 and seconds <= 300 and kept and failed == 0 and before == after,
-                  [f"despliegue bueno {good}: salida {good_code}", output.strip().splitlines()[-1]])
+    return QA_04.result(f"descartada en {seconds:.0f} s (salida {broken_code}); versión vigente {current_tag()}; "
+                        f"{failed} solicitudes fallidas de {len(traffic.responses)}; datos {'iguales' if same_data else 'distintos'}",
+                        good_code == 0 and broken_code == 1 and seconds <= 300 and good_version_stays and failed == 0 and same_data,
+                        [f"despliegue bueno {good}: salida {good_code}", output.strip().splitlines()[-1]])
 
 
-# --- QA-05 and QA-07: from scratch and back to nothing ------------------------
+# --- QA-05: everything from scratch --------------------------------------------------
 
-@covers("QA-05")
-def clean_start() -> Result:
-    live.scenario("QA-05", "Crear el despliegue completo desde cero",
-                  "operativo con las 2 instancias en ≤ 10 min, con un solo comando")
+@check(QA_05, changes_environment=True, needs_environment=False)
+def everything_from_scratch():
+    live.scenario((QA_05,))
 
-    live.say("bajo todo el entorno (make down)", "⚡", "yellow")
-    run("make", "down")
+    live.stimulus("bajo todo el entorno (make down)")
+    run(*make("down"))
 
-    live.say("lo levanto con un solo comando (make up)", "▶")
+    live.step("lo levanto con un solo comando (make up)")
     started = time.monotonic()
-    code, _ = run_showing("make", "up", keep=lambda line: "Ready" in line)
+    code, _ = run_showing(*make("up"), keep=lambda line: "Ready" in line)
     ready = (code == 0 and wait_until(lambda: get("/health").status == 200, 60) is not None
              and wait_until_balancer_uses(api_containers()))
     seconds = time.monotonic() - started
@@ -226,54 +200,43 @@ def clean_start() -> Result:
         announce_instances()
         get("/orders", show=True)
 
-    return Result("QA-05", "Crear el despliegue completo desde cero",
-                  "operativo con las 2 instancias en ≤ 10 min, con un solo comando",
-                  f"{seconds:.0f} s con `make up`; operativo: {'sí' if ready else 'no'}",
-                  ready and seconds <= 600,
-                  ["parte de `make down` (sin contenedores ni volumen); no se borran `.env` ni `api/.venv`"])
+    return QA_05.result(f"{seconds:.0f} s con `make up`; operativo: {'sí' if ready else 'no'}",
+                        ready and seconds <= 600,
+                        ["parte de `make down` (sin contenedores ni volumen); no se borran `.env` ni `api/.venv`"])
 
 
-def leftovers() -> list[str]:
-    containers = run("docker", "ps", "-a", "-q", "--filter", PROJECT_LABEL).split()
-    volumes = run("docker", "volume", "ls", "-q", "--filter", PROJECT_LABEL).split()
-    networks = run("docker", "network", "ls", "-q", "--filter", PROJECT_LABEL).split()
+# --- QA-07: back to nothing ----------------------------------------------------------
 
-    return containers + volumes + networks
-
-
-def documented_cost_factors() -> list[str]:
+def undocumented_cost_factors() -> list[str]:
     """The components of the environment that the cost section of the design does not mention."""
-    text = (ROOT.parent / "architecture-design" / "5. local components.md").read_text()
+    text = (ROOT.parent / "architecture-design" / "4. local components.md").read_text()
     section = text.split("## 9. Costo")[1].split("\n## ")[0].lower()
-    components = {"api y backup": "contenedores", "haproxy": "haproxy", "volumen de datos": "volumen",
-                  "imágenes": "imágenes"}
+    components = {"api y backup": "contenedores", "haproxy": "haproxy", "volumen de datos": "volumen", "imágenes": "imágenes"}
 
     return [name for name, keyword in components.items() if keyword not in section]
 
 
-@covers("QA-07")
-def tear_down() -> Result:
-    live.scenario("QA-07", "Retirar los recursos al terminar las pruebas",
-                  "0 recursos activos en ≤ 15 min; factores de consumo identificados para el 100 % de los componentes")
+@check(QA_07, changes_environment=True, needs_environment=False)
+def back_to_nothing():
+    live.scenario((QA_07,))
 
-    live.say("bajo todo el entorno (make down) y espero a que no quede nada", "⚡", "yellow")
-    run("make", "down")
-    cleared = wait_until(lambda: not leftovers(), 900, 2)
-    live.say("no quedan contenedores, redes ni volúmenes del proyecto" if cleared is not None
-             else f"quedan recursos: {leftovers()}", "🔎")
+    live.stimulus("bajo todo el entorno (make down) y espero a que no quede nada")
+    run(*make("down"))
+    cleared_in = wait_until(lambda: not project_resources(), 900, 2)
+    live.found("no quedan contenedores, redes ni volúmenes del proyecto" if cleared_in is not None
+               else f"quedan recursos: {project_resources()}")
 
-    undocumented = documented_cost_factors()
-    live.say(f"componentes sin factor de consumo documentado: {undocumented or 'ninguno'}", "🔎")
+    undocumented = undocumented_cost_factors()
+    live.found(f"componentes sin factor de consumo documentado: {undocumented or 'ninguno'}")
 
-    live.say("dejo el entorno levantado otra vez", "♻️")
-    run_showing("make", "up", keep=lambda line: "Ready" in line)
+    live.restoring("dejo el entorno levantado otra vez")
+    run_showing(*make("up"), keep=lambda line: "Ready" in line)
 
-    return Result("QA-07", "Retirar los recursos al terminar las pruebas",
-                  "0 recursos activos en ≤ 15 min; factores de consumo identificados para el 100 % de los componentes",
-                  f"sin recursos en {seconds_text(cleared)}; componentes sin factor documentado: {undocumented or 'ninguno'}",
-                  cleared is not None and cleared <= 900 and not undocumented,
-                  ["gasto total: 0, todo corre en la máquina local y no se usa ninguna cuenta de nube",
-                   "el entorno se vuelve a levantar al terminar"])
+    return QA_07.result(f"sin recursos en {seconds_text(cleared_in)}; componentes sin factor documentado: {undocumented or 'ninguno'}",
+                        cleared_in is not None and cleared_in <= 900 and not undocumented,
+                        ["gasto total: 0, todo corre en la máquina local y no se usa ninguna cuenta de nube",
+                         "el entorno se vuelve a levantar al terminar"])
 
 
-CHECKS = [instance_failure, data_loss, recreated_container, defective_version, clean_start, tear_down]
+CHECKS = [an_instance_fails, the_data_is_lost, a_container_is_recreated, a_defective_version_is_deployed,
+          everything_from_scratch, back_to_nothing]

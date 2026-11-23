@@ -63,7 +63,7 @@ class RequestLogMiddleware(InstanceMiddleware):
                     "path": request.url.path,
                     "status": response.status_code,
                     "ms": round((time.perf_counter() - start) * 1000, 2),
-                    "data_version": getattr(request.state, "data_version", None),
+                    "data_version": response.headers.get("x-data-version"),
                 }
             },
         )
