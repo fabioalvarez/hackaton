@@ -1,0 +1,103 @@
+<mxfile host="app.diagrams.net" scale="3" border="0">
+  <diagram name="Vista de despliegue" id="deploy-local-view">
+    <mxGraphModel dx="2196" dy="1564" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0" adaptiveColors="auto">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" parent="1" style="text;html=1;align=left;verticalAlign=middle;fontSize=22;fontStyle=1;" value="Nodo Ruta · Vista de despliegue (entorno local)" vertex="1">
+          <mxGeometry height="30" width="1100" x="20" y="5" as="geometry" />
+        </mxCell>
+        <mxCell id="sub" parent="1" style="text;html=1;align=left;verticalAlign=middle;fontSize=14;fontColor=#5A626E;" value="Complementa la vista C&amp;amp;C: aquí se ve dónde corre cada componente, no cómo se comunican" vertex="1">
+          <mxGeometry height="24" width="1500" x="20" y="36" as="geometry" />
+        </mxCell>
+        <mxCell id="host" parent="1" style="rounded=0;dashed=1;dashPattern=6 4;fillColor=none;strokeColor=#B8C0CC;verticalAlign=top;align=center;fontStyle=1;fontSize=14;fontColor=#5A626E;html=1;whiteSpace=wrap;" value="Equipo local · Docker" vertex="1">
+          <mxGeometry height="750" width="1700" x="230" y="70" as="geometry" />
+        </mxCell>
+        <mxCell id="net" parent="1" style="rounded=0;dashed=1;dashPattern=6 4;fillColor=none;strokeColor=#B8C0CC;verticalAlign=top;align=center;fontStyle=1;fontSize=14;fontColor=#5A626E;html=1;whiteSpace=wrap;" value="Red de Compose · next_default" vertex="1">
+          <mxGeometry height="690" width="1030" x="260" y="110" as="geometry" />
+        </mxCell>
+        <mxCell id="fs" parent="1" style="rounded=0;dashed=1;dashPattern=6 4;fillColor=none;strokeColor=#B8C0CC;verticalAlign=top;align=center;fontStyle=1;fontSize=14;fontColor=#5A626E;html=1;whiteSpace=wrap;" value="Sistema de archivos del equipo · next/store/" vertex="1">
+          <mxGeometry height="690" width="400" x="1490" y="110" as="geometry" />
+        </mxCell>
+        <mxCell id="cli" parent="1" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;fillColor=#F2F4F7;strokeColor=#B8C0CC;fontSize=13;fontColor=#1B1F24;verticalAlign=top;spacing=6;" value="&lt;b style=&quot;font-size:16px&quot;&gt;Cliente&lt;/b&gt;&lt;br&gt;&lt;small&gt;navegador o curl&lt;/small&gt;" vertex="1">
+          <mxGeometry height="140" width="150" x="30" y="330" as="geometry" />
+        </mxCell>
+        <mxCell id="hap" parent="1" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#EEF4FF;strokeColor=#9DB8F2;fontSize=13;fontColor=#1B1F24;verticalAlign=top;spacing=6;" value="&lt;b style=&quot;font-size:16px&quot;&gt;haproxy&lt;/b&gt;&lt;br&gt;&lt;small&gt;Contenedor · haproxy:2.9-alpine&lt;/small&gt;&lt;hr&gt;Aloja: &lt;b&gt;Balanceador&lt;/b&gt;&lt;br&gt;1 contenedor" vertex="1">
+          <mxGeometry height="140" width="240" x="290" y="330" as="geometry" />
+        </mxCell>
+        <mxCell id="r1" parent="1" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#EEF4FF;strokeColor=#9DB8F2;fontSize=13;fontColor=#1B1F24;verticalAlign=top;spacing=6;" value="&lt;b style=&quot;font-size:16px&quot;&gt;api · réplica 1&lt;/b&gt;&lt;br&gt;&lt;small&gt;Contenedor · next-api:&amp;lt;versión&amp;gt;&lt;/small&gt;&lt;hr&gt;Aloja: &lt;b&gt;Instancia A&lt;/b&gt;&lt;br&gt;Python 3.12 · FastAPI&lt;br&gt;0,25 CPU · 256 MB&lt;br&gt;Volumen de datos: solo lectura" vertex="1">
+          <mxGeometry height="170" width="300" x="620" y="150" as="geometry" />
+        </mxCell>
+        <mxCell id="r2" parent="1" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#EEF4FF;strokeColor=#9DB8F2;fontSize=13;fontColor=#1B1F24;verticalAlign=top;spacing=6;" value="&lt;b style=&quot;font-size:16px&quot;&gt;api · réplica 2&lt;/b&gt;&lt;br&gt;&lt;small&gt;Contenedor · next-api:&amp;lt;versión&amp;gt;&lt;/small&gt;&lt;hr&gt;Aloja: &lt;b&gt;Instancia B&lt;/b&gt;&lt;br&gt;Python 3.12 · FastAPI&lt;br&gt;0,25 CPU · 256 MB&lt;br&gt;Volumen de datos: solo lectura" vertex="1">
+          <mxGeometry height="170" width="300" x="620" y="480" as="geometry" />
+        </mxCell>
+        <mxCell id="nw" parent="1" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;dashed=1;dashPattern=6 4;fillColor=#FFF8E6;strokeColor=#E0B64A;fontSize=13;fontColor=#1B1F24;verticalAlign=top;spacing=6;" value="&lt;b style=&quot;font-size:16px&quot;&gt;2 réplicas nuevas&lt;/b&gt;&lt;br&gt;&lt;small&gt;solo durante un despliegue&lt;/small&gt;&lt;hr&gt;Se crean al lado de las actuales.&lt;br&gt;Si funcionan, las reemplazan;&lt;br&gt;si no, se eliminan." vertex="1">
+          <mxGeometry height="110" width="300" x="620" y="670" as="geometry" />
+        </mxCell>
+        <mxCell id="vol" parent="1" style="shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=14;whiteSpace=wrap;html=1;fillColor=#F3EEFF;strokeColor=#B9A6F0;fontSize=13;fontColor=#1B1F24;" value="&lt;b&gt;Volumen orders-data&lt;/b&gt;&lt;br&gt;&lt;small&gt;Aloja: &lt;b&gt;Almacenamiento persistente&lt;/b&gt;&lt;/small&gt;&lt;br&gt;&lt;small&gt;volumen de Docker&lt;/small&gt;" vertex="1">
+          <mxGeometry height="140" width="240" x="1010" y="330" as="geometry" />
+        </mxCell>
+        <mxCell id="bak" parent="1" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#EEF4FF;strokeColor=#9DB8F2;fontSize=13;fontColor=#1B1F24;verticalAlign=top;spacing=6;" value="&lt;b style=&quot;font-size:16px&quot;&gt;backup&lt;/b&gt;&lt;br&gt;&lt;small&gt;Contenedor · next-backup&lt;/small&gt;&lt;hr&gt;Aloja: &lt;b&gt;Vigilante&lt;/b&gt;&lt;br&gt;Python 3.12&lt;br&gt;Volumen de datos: lectura y escritura&lt;br&gt;Carpeta de respaldos: lectura y escritura" vertex="1">
+          <mxGeometry height="160" width="260" x="1000" y="530" as="geometry" />
+        </mxCell>
+        <mxCell id="data" parent="1" style="shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=14;whiteSpace=wrap;html=1;fillColor=#F3EEFF;strokeColor=#B9A6F0;fontSize=13;fontColor=#1B1F24;" value="&lt;b&gt;store/data/orders.json&lt;/b&gt;&lt;br&gt;&lt;small&gt;datos iniciales&lt;/small&gt;" vertex="1">
+          <mxGeometry height="120" width="300" x="1540" y="340" as="geometry" />
+        </mxCell>
+        <mxCell id="bk" parent="1" style="shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=14;whiteSpace=wrap;html=1;fillColor=#F3EEFF;strokeColor=#B9A6F0;fontSize=13;fontColor=#1B1F24;" value="&lt;b&gt;store/backups/&lt;/b&gt;&lt;br&gt;&lt;small&gt;Aloja: &lt;b&gt;Almacenamiento de respaldo&lt;/b&gt;&lt;/small&gt;&lt;br&gt;&lt;small&gt;una copia por versión de los datos&lt;/small&gt;" vertex="1">
+          <mxGeometry height="140" width="300" x="1540" y="540" as="geometry" />
+        </mxCell>
+        <mxCell id="mk" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F2F4F7;strokeColor=#B8C0CC;fontSize=13;fontColor=#1B1F24;verticalAlign=top;spacing=6;" value="&lt;b style=&quot;font-size:16px&quot;&gt;Makefile&lt;/b&gt;&lt;br&gt;&lt;small&gt;raíz del repositorio&lt;/small&gt;&lt;hr&gt;make up · down&lt;br&gt;make deploy · verify" vertex="1">
+          <mxGeometry height="140" width="240" x="290" y="560" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="cli" target="hap" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#475569;strokeWidth=1.5;endArrow=classic;fontSize=12;fontColor=#334155;labelBackgroundColor=default;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="hap" target="r1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#475569;strokeWidth=1.5;endArrow=classic;fontSize=12;fontColor=#334155;labelBackgroundColor=default;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="575" y="400" /><mxPoint x="575" y="235" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e3" edge="1" parent="1" source="hap" target="r2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#475569;strokeWidth=1.5;endArrow=classic;fontSize=12;fontColor=#334155;labelBackgroundColor=default;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="575" y="400" /><mxPoint x="575" y="565" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e4" edge="1" parent="1" source="r1" target="vol" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#475569;strokeWidth=1.5;endArrow=classic;fontSize=12;fontColor=#334155;labelBackgroundColor=default;" value="solo lectura">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="965" y="235" /><mxPoint x="965" y="400" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e5" edge="1" parent="1" source="r2" target="vol" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#475569;strokeWidth=1.5;endArrow=classic;fontSize=12;fontColor=#334155;labelBackgroundColor=default;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="965" y="565" /><mxPoint x="965" y="400" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e6" edge="1" parent="1" source="bak" target="vol" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#475569;strokeWidth=1.5;endArrow=classic;fontSize=12;fontColor=#334155;labelBackgroundColor=default;startArrow=classic;" value="lectura y escritura">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e7" edge="1" parent="1" source="bak" target="bk" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#475569;strokeWidth=1.5;endArrow=classic;fontSize=12;fontColor=#334155;labelBackgroundColor=default;startArrow=classic;" value="lectura y escritura">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e8" edge="1" parent="1" source="data" target="vol" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#475569;strokeWidth=1.5;endArrow=classic;fontSize=12;fontColor=#334155;labelBackgroundColor=default;dashed=1;dashPattern=6 4;" value="make load-data">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e9" edge="1" parent="1" source="mk" target="nw" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#475569;strokeWidth=1.5;endArrow=classic;fontSize=12;fontColor=#334155;labelBackgroundColor=default;dashed=1;dashPattern=6 4;" value="make deploy crea">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="575" y="630" /><mxPoint x="575" y="725" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lg" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#D5DAE1;fontSize=13;fontColor=#1B1F24;align=left;spacingLeft=12;" value="&lt;b&gt;Notación&lt;/b&gt;&lt;br&gt;Flecha: relación de despliegue (comunicación o montaje) · Cilindro: datos · Recuadro azul: contenedor · Recuadro amarillo punteado: contenedores temporales de un despliegue · Rectángulo gris: fuera del entorno o herramienta&lt;br&gt;Las zonas punteadas solo ordenan la figura. Un solo equipo: no es alta disponibilidad real." vertex="1">
+          <mxGeometry height="80" width="1910" x="20" y="850" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
