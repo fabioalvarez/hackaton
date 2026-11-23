@@ -145,6 +145,7 @@ Se leen de las variables de entorno y, si no están, de `next/.env` (copia local
 .
 ├── Makefile                   # todos los comandos
 ├── README.md
+├── .gitignore                 # .env, .venv, respaldos e historial de despliegues
 ├── architecture-design/       # el diseño: requisitos, arquitectura, componentes y plan de pruebas,
 │                              # y las vistas: C&C.drawio (componentes y conectores) y deploy view.drawio (despliegue local)
 ├── validations/               # evidencia de las pruebas: verification.md (lo escribe make verify)
