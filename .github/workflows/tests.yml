@@ -1,0 +1,44 @@
+# Nombre que aparece en la pestaña "Actions" de GitHub
+name: Tests
+
+# Cuándo se ejecuta el workflow
+on:
+  push:
+    branches: [main]   # cada push a main
+  pull_request:        # y cada pull request (cualquier rama destino)
+
+# Permisos del token automático (GITHUB_TOKEN): solo lectura del repo,
+# lo mínimo necesario para hacer checkout.
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    # Máquina virtual de GitHub donde corre el job (ya trae Docker instalado)
+    runs-on: ubuntu-latest
+    steps:
+      # 1) Descarga el código del repo en la máquina
+      - uses: actions/checkout@v4
+
+      # 2) Activa Buildx, el constructor de Docker que permite usar caché
+      #    entre ejecuciones (necesario para type=gha más abajo)
+      - uses: docker/setup-buildx-action@v3
+
+      # 3) Construye la imagen de tests a partir de Dockerfile.test
+      - name: Build test image
+        uses: docker/build-push-action@v6
+        with:
+          context: .                  # raíz del repo: el Dockerfile necesita ver next/
+          file: Dockerfile.test       # Dockerfile específico para tests (no el de producción)
+          load: true                  # deja la imagen disponible en el Docker local
+                                      # (sin esto, se construye pero no se puede ejecutar)
+          tags: hackaton-tests:ci     # nombre con el que la usaremos en el paso 4
+          cache-from: type=gha        # reutiliza capas guardadas en ejecuciones anteriores
+          cache-to: type=gha,mode=max # guarda todas las capas para la próxima vez
+                                      # (así no se reinstalan las dependencias si no cambian)
+
+      # 4) Ejecuta los tests dentro del contenedor. El CMD del Dockerfile lanza pytest.
+      #    --rm borra el contenedor al terminar. Si pytest falla (exit code != 0),
+      #    este paso falla y con él todo el job.
+      - name: Run tests in container
+        run: docker run --rm hackaton-tests:ci

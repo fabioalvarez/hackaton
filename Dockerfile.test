@@ -1,0 +1,21 @@
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    UV_LINK_MODE=copy
+
+RUN pip install --no-cache-dir uv==0.11.11
+
+WORKDIR /app/next/api
+
+# Dependencias primero (incluye el grupo dev) para aprovechar la caché de capas
+COPY next/api/pyproject.toml next/api/uv.lock ./
+RUN uv sync --frozen --no-install-project
+
+# Código y tests de los 4 subproyectos
+WORKDIR /app
+COPY next ./next
+
+WORKDIR /app/next/api
+RUN uv sync --frozen
+
+CMD ["uv", "run", "--frozen", "pytest", "tests", "../backup/tests", "../deploy/tests", "../verify/tests"]
