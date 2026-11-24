@@ -14,6 +14,8 @@ RUN uv sync --frozen --no-install-project
 # Código y tests de los 4 subproyectos
 WORKDIR /app
 COPY next ./next
+# test_ct01 verifica que .env esté en el .gitignore de la raíz
+COPY .gitignore ./.gitignore
 
 WORKDIR /app/next/api
 RUN uv sync --frozen
