@@ -4,7 +4,7 @@ Servicio de consulta de entregas. Solo lectura: lee los pedidos de un archivo JS
 
 Todos los comandos se ejecutan desde la raíz del repositorio. `make help` muestra la lista completa.
 
-## Requisitos
+## Requisitos.
 
 - [Docker](https://www.docker.com/) (si está apagado, `make up` lo inicia en macOS)
 - [uv](https://docs.astral.sh/uv/) (para las pruebas y para correr la API sin Docker)
