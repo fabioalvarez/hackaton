@@ -22,7 +22,7 @@ def test_ct01_settings_have_no_secret_fields():
 
 
 def test_ct01_dotenv_is_kept_out_of_git():
-    assert ".env" in (PROJECT_DIR / ".gitignore").read_text().split()
+    assert ".env" in (PROJECT_DIR.parent / ".gitignore").read_text().split()
 
 
 def test_ct01_dotenv_is_outside_the_docker_build_context():
