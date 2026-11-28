@@ -19,9 +19,9 @@ services:
     volumes:
       - orders-data:/data:ro
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8080/health', timeout=2)"]
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8080/health', timeout=2)"]
       interval: 5s
-      timeout: 3s
+      timeout: 10s
       retries: 2
       start_period: 10s
     deploy:
