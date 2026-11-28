@@ -21,6 +21,12 @@ RUN uv sync --frozen --no-dev --no-editable
 FROM python:3.12-slim
 
 WORKDIR /app
+
+# The official image ships the standard library without .pyc files, and the non-root user
+# cannot write them: every `python` call (e.g. the healthcheck) would recompile urllib/http/ssl
+# from source, which under the 0.25 CPU limit takes ~10 s. Compile them once at build time.
+RUN python -m compileall -q -j 0 /usr/local/lib/python3.12
+
 COPY --from=build /app/.venv /app/.venv
 
 # PATH: so the `next` command is found. PYTHONUNBUFFERED: logs go out immediately.
