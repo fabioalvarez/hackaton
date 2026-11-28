@@ -10,6 +10,8 @@ Todos los comandos se ejecutan desde la raíz del repositorio. `make help` muest
 - [uv](https://docs.astral.sh/uv/) (para las pruebas y para correr la API sin Docker)
 - `make`
 
+> **¿Estás en Windows?** Los comandos `make` de este README **no funcionan tal cual** en Windows. Salta a la sección [Ejecutar en Windows](#ejecutar-en-windows) y usa el script `run-windows.sh`.
+
 ## 1. Cómo levantar en local
 
 ```bash
@@ -40,6 +42,80 @@ make down     # elimina contenedores, red y volumen de datos
 ```
 
 **Sin Docker:** `make up-local` levanta **una** instancia en http://localhost:8080.
+
+## Ejecutar en Windows
+
+En Windows los comandos `make` fallan por dos motivos:
+
+1. Las recetas del Makefile están escritas en bash (`for`, `curl`, `sleep`) y, al llamar al sub-make, `$(MAKE)` se expande a la ruta `C:/Program Files (x86)/GnuWin32/bin/make`; el `(x86)` sin comillas rompe el shell.
+2. El target `check-docker` usa `open -a Docker`, un comando exclusivo de macOS.
+
+Por eso se incluye [`run-windows.sh`](run-windows.sh), que ejecuta los mismos pasos con `docker compose` directamente.
+
+**Requisitos:** [Docker Desktop](https://www.docker.com/) abierto y corriendo (en Windows no se inicia solo), y **Git Bash** (viene con [Git para Windows](https://git-scm.com/download/win)). Todos los comandos se corren desde Git Bash, no desde PowerShell ni CMD. No necesitas `uv` ni Python: la app y las pruebas corren dentro de Docker.
+
+```bash
+bash run-windows.sh up        # construye y levanta todo en http://localhost:8000
+bash run-windows.sh down      # apaga y borra contenedores, red y volumen
+bash run-windows.sh logs      # sigue los logs en vivo
+bash run-windows.sh load-data # recarga store/data/orders.json en el volumen
+bash run-windows.sh test      # corre las pruebas dentro de Docker
+```
+
+Equivalencias con el Makefile:
+
+| macOS / Linux    | Windows (Git Bash)              |
+|------------------|---------------------------------|
+| `make up`        | `bash run-windows.sh up`        |
+| `make down`      | `bash run-windows.sh down`      |
+| `make logs`      | `bash run-windows.sh logs`      |
+| `make load-data` | `bash run-windows.sh load-data` |
+| `make test`      | `bash run-windows.sh test`      |
+
+> `jq` no viene con Git Bash. Para formatear el JSON de los ejemplos, instálalo o quita el `| jq`.
+
+### Ver la ejecución y los logs
+
+Por defecto el nivel de log de la API es `info`, que **oculta** las llamadas a `/health`. Para ver todas las peticiones, pon `LOG_LEVEL=debug` en `next/.env` y reinicia (`bash run-windows.sh up`).
+
+Para seguir los logs en vivo, deja abierta una ventana con:
+
+```bash
+bash run-windows.sh logs
+```
+
+Verás tres fuentes:
+
+- **`api-1` / `api-2`** — cada petición con método, ruta, status y milisegundos. `/health` sale como `DEBUG` y `/orders` como `INFO`.
+- **`haproxy-1`** — a qué réplica (`api1` o `api2`) mandó cada petición, con su código de estado.
+- **`backup-1`** — el vigilante revisando los datos cada 5 segundos.
+
+La forma más gráfica es **Docker Desktop**: pestaña **Containers**, despliega el stack `next`, haz clic en un contenedor y abre la pestaña **Logs** (en vivo, con color y buscador).
+
+### Probar la alta disponibilidad
+
+Con el stack sano, mata una réplica y lanza peticiones por HAProxy:
+
+```bash
+docker kill next-api-1
+for i in $(seq 20); do curl -s -o /dev/null -w "%{http_code} %header{x-instance-id}\n" localhost:8000/orders; done | sort | uniq -c
+```
+
+Las 20 peticiones responden `200` desde la instancia sobreviviente: HAProxy la sacó sin que el usuario note la caída. En los logs de `haproxy-1` verás la secuencia completa:
+
+```
+Server api/api1 is going DOWN ... 1 active and 0 backup servers left
+Server api/api1 is DOWN, reason: Layer4 connection problem, info: "Connection refused"
+Server api/api1 is UP, reason: Layer7 check passed, code: 200 ... 2 active servers online
+```
+
+La réplica **se levanta sola** gracias a `restart: unless-stopped` en `docker-compose.yml`, siempre que haya caído por un fallo o un `docker kill`. Compruébalo sin tocar nada más:
+
+```bash
+docker inspect -f '{{.State.Status}} reinicios={{.RestartCount}}' next-api-1
+```
+
+A los pocos segundos vuelve a `running` y `RestartCount` sube a 1. Importante: `unless-stopped` **no** reinicia un contenedor que detuviste a propósito (`docker stop`, `docker compose stop/down`, o un `compose up` que falló y dejó los contenedores parados). En ese caso, relevanta todo con `bash run-windows.sh up`.
 
 ## 2. Cómo correr las pruebas
 
