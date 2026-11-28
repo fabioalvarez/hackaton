@@ -68,8 +68,9 @@ check-docker:
 
 # ---------- Tests ----------
 
-test: env ## Run the tests
-	uv run --directory $(API) pytest tests $(CURDIR)/$(APP)/backup/tests $(CURDIR)/$(APP)/deploy/tests $(CURDIR)/$(APP)/verify/tests
+test: check-docker ## Run the tests (inside Docker: nothing to install)
+	docker build -q -f $(APP)/tests.Dockerfile -t next-tests .
+	docker run --rm next-tests
 
 
 # ---------- Validation (manual checks against the running environment) ----------
