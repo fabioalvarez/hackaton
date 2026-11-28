@@ -56,6 +56,28 @@ LAYOUT = """<!doctype html>
   .small { font-size: 14px; } code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   footer { color: var(--muted); font-size: 14px; text-align: center; margin-top: 28px; }
   a { color: var(--brand); }
+  .instance { margin: 40px auto 0; max-width: 560px; text-align: center; background: var(--card); border: 1px solid var(--line); border-radius: 20px;
+              padding: 28px 24px 24px; position: relative; overflow: hidden; }
+  .instance::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 4px; background: var(--hue, var(--brand)); transition: background .4s; }
+  .instance h3 { margin: 0 0 18px; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+  .server { display: inline-flex; align-items: center; gap: 14px; padding: 10px 20px 10px 12px; border-radius: 16px;
+            background: var(--chip); border: 2px solid var(--hue, var(--brand)); transition: border-color .4s; }
+  .server .led { width: 14px; height: 14px; border-radius: 50%; background: var(--hue, var(--brand)); box-shadow: 0 0 0 0 var(--hue, var(--brand)); animation: pulse 2s infinite; }
+  .server .rack { font-size: 28px; }
+  .server code { font-size: 20px; font-weight: 700; color: var(--hue, var(--brand)); }
+  .server.swap { animation: pop .45s ease; }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--hue, var(--brand)) 60%, transparent); } 70%, 100% { box-shadow: 0 0 0 10px transparent; } }
+  @keyframes pop { 0% { transform: scale(.85) rotateX(60deg); opacity: .2; } 60% { transform: scale(1.06); } 100% { transform: none; opacity: 1; } }
+  .switch { display: block; margin: 24px auto 0; border: 0; cursor: pointer; padding: 11px 24px; border-radius: 999px; font: inherit; font-weight: 700;
+            color: #fff; background: linear-gradient(135deg, #3b6cf6, #7c4dff); transition: transform .15s, box-shadow .15s, opacity .15s; }
+  .switch:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(59, 108, 246, .35); }
+  .switch:disabled { opacity: .6; cursor: progress; transform: none; }
+  .switch .spin { display: inline-block; } .switch.busy .spin { animation: spin .6s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .trail { display: flex; justify-content: center; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 22px; min-height: 28px; }
+  .trail .hop { padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; color: #fff; font-family: ui-monospace, Menlo, monospace; animation: pop .35s ease; }
+  .trail .arrow { color: var(--muted); font-size: 12px; }
+  .stats { color: var(--muted); font-size: 13px; margin-top: 14px; }
 </style>
 </head>
 <body>
@@ -65,7 +87,13 @@ LAYOUT = """<!doctype html>
     <nav>__NAV__</nav>
   </header>
   __BODY__
-  <footer>Served by <code>__INSTANCE__</code></footer>
+  <div class="instance" id="instance">
+    <h3>Instance serving you</h3>
+    <div class="server" id="server"><span class="rack">&#128421;</span><span class="led"></span><code id="instance-id">__INSTANCE__</code></div>
+    <button class="switch" id="switch" type="button"><span class="spin">&#128260;</span> Switch instance</button>
+    <div class="trail" id="trail"></div>
+    <div class="stats" id="stats">Press the button: the load balancer may send you to another instance.</div>
+  </div>
 </main>
 <script>
   const el = id => document.getElementById(id);
@@ -78,6 +106,41 @@ LAYOUT = """<!doctype html>
     return span;
   }
 __SCRIPT__
+  (function () {
+    const hueOf = id => { let h = 0; for (const c of id) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
+    const colorOf = id => 'hsl(' + hueOf(id) + ' 70% 48%)';
+    const box = el('instance'), server = el('server'), button = el('switch');
+    const trail = [el('instance-id').textContent];
+    const counts = { [trail[0]]: 1 };
+    function paint(id) {
+      box.style.setProperty('--hue', colorOf(id));
+      el('instance-id').textContent = id;
+      server.classList.remove('swap'); void server.offsetWidth; server.classList.add('swap');
+    }
+    function renderTrail() {
+      const nodes = [];
+      trail.slice(-6).forEach((id, i) => {
+        if (i) { const a = document.createElement('span'); a.className = 'arrow'; a.textContent = '\u2192'; nodes.push(a); }
+        const hop = document.createElement('span'); hop.className = 'hop'; hop.textContent = id; hop.style.background = colorOf(id); nodes.push(hop);
+      });
+      el('trail').replaceChildren(...nodes);
+      const ids = Object.keys(counts);
+      el('stats').textContent = ids.length + ' instance' + (ids.length === 1 ? '' : 's') + ' seen \u00b7 ' + trail.length + ' request' + (trail.length === 1 ? '' : 's');
+    }
+    paint(trail[0]); renderTrail();
+    button.addEventListener('click', async () => {
+      button.disabled = true; button.classList.add('busy');
+      try {
+        const response = await fetch('/health', { headers: { Accept: 'application/json' }, cache: 'no-store' });
+        const id = response.headers.get('x-instance-id');
+        if (id) { trail.push(id); counts[id] = (counts[id] || 0) + 1; paint(id); renderTrail(); }
+      } catch (error) {
+        el('stats').textContent = 'The service does not answer right now.';
+      } finally {
+        button.disabled = false; button.classList.remove('busy');
+      }
+    });
+  })();
 </script>
 </body>
 </html>
